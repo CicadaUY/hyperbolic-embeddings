@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from models.base_hyperbolic_model import BaseHyperbolicModel
+from models.dmercator_embedding_model import DMercatorModel
 from models.lorentz_embedding_model import LorentzEmbeddingsModel
 from models.poincare_embedding_model import PoincareEmbeddingModel
 
@@ -24,7 +25,7 @@ class HyperbolicEmbeddings:
         elif embedding_type == "poincare_maps":
             return NotImplementedError
         elif embedding_type == "d_mercator":
-            raise NotImplementedError
+            raise DMercatorModel(config)
         elif embedding_type == "hydra":  # R con código de Python
             raise NotImplementedError
         else:
