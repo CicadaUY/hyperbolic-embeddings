@@ -1,21 +1,19 @@
-from typing import Dict, List, Optional, Tuple
-import torch
-import numpy as np
-from torch.utils.data import DataLoader
-from tensorboardX import SummaryWriter
-from datetime import datetime
-import os
-from tqdm import tqdm
 import logging
+import os
+from datetime import datetime
+from typing import List, Optional, Tuple
+
+import numpy as np
+import torch
+from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from models.base_hyperbolic_model import BaseHyperbolicModel
-from models.lorentz.lorentz import Lorentz, RSGD, Graph, recon
+from models.lorentz.lorentz import RSGD, Graph, Lorentz, recon
 
 # Enable logging for gensim
-logging.basicConfig(
-    format='%(asctime)s : %(levelname)s : %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
@@ -35,15 +33,16 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
         self.shuffle = config.get("shuffle", True)
         self.model = None
 
-    def train(self, 
-              edge_list: Optional[List[tuple]] = None,
-              adjacency_matrix: Optional[np.ndarray] = None,
-              model_path: str = "saved_models/model.bin"):
-        
+    def train(
+        self,
+        edge_list: Optional[List[tuple]] = None,
+        adjacency_matrix: Optional[np.ndarray] = None,
+        model_path: str = "saved_models/model.bin",
+    ):
 
         if edge_list is None and adjacency_matrix is None:
             raise ValueError("You must provide either edge_list or adjacency_matrix.")
-        
+
         if edge_list is not None:
             # Extract node set and map to integer IDs
             node_ids = sorted(set(str(u) for u, v in edge_list) | set(str(v) for u, v in edge_list))
@@ -65,15 +64,11 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
 
         with tqdm(total=self.epochs, ncols=80, desc="Training", dynamic_ncols=True) as pbar:
             for epoch in range(self.epochs):
-                if hasattr(self, 'optimizer') and self.optimizer is not None:
-                    self.optimizer.learning_rate = (
-                        self.learning_rate / self.burn_c
-                        if epoch < self.burn_epochs
-                        else self.learning_rate
-                    )
-                for I, Ks in dataloader:
+                if hasattr(self, "optimizer") and self.optimizer is not None:
+                    self.optimizer.learning_rate = self.learning_rate / self.burn_c if epoch < self.burn_epochs else self.learning_rate
+                for inputs, Ks in dataloader:
                     self.optimizer.zero_grad()
-                    loss = self.model(I, Ks).mean()
+                    loss = self.model(inputs, Ks).mean()
                     loss.backward()
                     self.optimizer.step()
 
@@ -81,14 +76,13 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
                 self.writer.add_scalar("recon_perf", recon(self.model.get_lorentz_table(), adjacency_matrix), epoch)
                 self.writer.add_scalar("table_test", self.model._test_table(), epoch)
 
-
                 if epoch % self.save_step == 0:
                     tmp_path = model_path + ".tmp"
                     torch.save(self.model.state_dict(), tmp_path)
                     os.replace(tmp_path, model_path)
 
                 # Update progress bar
-                pbar.set_description(f"Epoch {epoch+1} | Loss: {loss.item():.4f}" if 'loss' in locals() else f"Epoch {epoch+1}")
+                pbar.set_description(f"Epoch {epoch+1} | Loss: {loss.item():.4f}" if "loss" in locals() else f"Epoch {epoch+1}")
                 pbar.update(1)
 
         logger.info("Training completed.")

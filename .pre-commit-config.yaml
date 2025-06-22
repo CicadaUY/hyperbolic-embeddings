@@ -2,7 +2,7 @@ exclude: ^(prompts\.py|docs_processing/src/constants/prompts\.py)$
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v4.4.0
     hooks:
       - id: detect-aws-credentials
         args: ["--allow-missing-credentials"]
@@ -25,7 +25,7 @@ repos:
         args: ["--profile", "black", "--filter-files"]
 
   - repo: https://github.com/pycqa/flake8
-    rev: 7.1.1
+    rev: 7.3.0
     hooks:
       - id: flake8
         args: [

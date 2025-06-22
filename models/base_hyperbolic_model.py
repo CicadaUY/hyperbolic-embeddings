@@ -1,16 +1,18 @@
-
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Optional
+from typing import List, Optional, Tuple
+
 import numpy as np
+
 
 class BaseHyperbolicModel(ABC):
 
     @abstractmethod
-    def train(self, 
-              edge_list: Optional[List[tuple]] = None, 
-              adjacency_matrix: Optional[np.ndarray] = None,
-              model_path: str = "saved_models/model.bin"
-              ):
+    def train(
+        self,
+        edge_list: Optional[List[tuple]] = None,
+        adjacency_matrix: Optional[np.ndarray] = None,
+        model_path: str = "saved_models/model.bin",
+    ):
         pass
 
     @abstractmethod
