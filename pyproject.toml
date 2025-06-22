@@ -1,0 +1,24 @@
+[tool.black]
+line-length = 140
+exclude = '''
+(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | venv
+  | \.venv
+  | env
+  | \.env
+  | _build
+  | buck-out
+  | build
+  | dist
+  | local_storage
+  | logs
+)
+'''
+[tool.isort]
+profile = "black"
+line_length = 88

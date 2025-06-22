@@ -1,0 +1,8 @@
+numpy
+torch>=1.9
+scipy
+tqdm
+# For poincare_embeddings
+gensim==3.8.3
+# For lorentz_embeddings
+git+https://github.com/theSage21/lorentz-embeddings.git
