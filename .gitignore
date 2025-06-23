@@ -175,3 +175,4 @@ local_storage/*
 
 data/*
 saved_models/*
+tmp/*

@@ -55,7 +55,7 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
                 adjacency_matrix[id_to_index[str(u)], id_to_index[str(v)]] = 1
 
         self.num_nodes = adjacency_matrix.shape[0]
-        self.model = Lorentz(n_items=self.num_nodes, dim=self.dim + 1)
+        self.model = Lorentz(n_items=self.num_nodes, dim=self.dim)
         dataset = Graph(adjacency_matrix, sample_size=self.sample_size)
         dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=self.shuffle, num_workers=self.loader_workers)
 
