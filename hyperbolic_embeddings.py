@@ -7,6 +7,7 @@ import numpy as np
 
 from models.base_hyperbolic_model import BaseHyperbolicModel
 from models.dmercator_embedding_model import DMercatorModel
+from models.hydra_embedding_model import HydraModel
 from models.lorentz_embedding_model import LorentzEmbeddingsModel
 from models.poincare_embedding_model import PoincareEmbeddingModel
 
@@ -27,7 +28,7 @@ class HyperbolicEmbeddings:
         elif embedding_type == "dmercator":
             return DMercatorModel(config)
         elif embedding_type == "hydra":  # R con código de Python
-            raise NotImplementedError
+            return HydraModel(config)
         else:
             raise ValueError(f"Unsupported model type: {embedding_type}")
 
