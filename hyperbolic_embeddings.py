@@ -46,6 +46,13 @@ class HyperbolicEmbeddings:
     def get_all_embeddings(self, model_path: Optional[str] = None):
         return self.model.get_all_embeddings(model_path)
 
+    def get_geodesic(self, p1, p2, num_points=100):
+        omega = np.arccos(np.clip(np.dot(p1, p2) / (np.linalg.norm(p1) * np.linalg.norm(p2)), -1.0, 1.0))
+        if np.isclose(omega, 0):
+            return np.vstack([p1, p2])  # Straight line for nearly identical points
+        t_vals = np.linspace(0, 1, num_points)
+        return np.array([(np.sin((1 - t) * omega) / np.sin(omega)) * p1 + (np.sin(t * omega) / np.sin(omega)) * p2 for t in t_vals])
+
     def plot_embeddings(self, labels: Optional[List[str]] = None, edge_list: Optional[List[Tuple]] = None, save_path: Optional[str] = None):
         embeddings = self.get_all_embeddings()  # Must be implemented by each model
         if embeddings.shape[1] > 2:
@@ -58,9 +65,10 @@ class HyperbolicEmbeddings:
 
         if edge_list:
             for u, v in edge_list:
-                x_vals = [x[u], x[v]]
-                y_vals = [y[u], y[v]]
-                ax.plot(x_vals, y_vals, color="gray", linewidth=0.5, alpha=0.5, zorder=1)
+                p1 = embeddings[u][:2]
+                p2 = embeddings[v][:2]
+                geodesic = self.get_geodesic(p1, p2)
+                ax.plot(geodesic[:, 0], geodesic[:, 1], color="gray", linewidth=0.5, alpha=0.5, linestyle="--", zorder=1)
 
         if labels:
             labels = np.array(labels)
