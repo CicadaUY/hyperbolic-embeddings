@@ -28,6 +28,7 @@ class PoincareEmbeddingModel(BaseHyperbolicModel):
         self,
         edge_list: Optional[List[tuple]] = None,
         adjacency_matrix: Optional[np.ndarray] = None,
+        features: Optional[np.ndarray] = None,
         model_path: str = "saved_models/model.bin",
     ):
         if edge_list is None and adjacency_matrix is None:

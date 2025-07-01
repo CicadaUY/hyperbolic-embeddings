@@ -11,6 +11,7 @@ class BaseHyperbolicModel(ABC):
         self,
         edge_list: Optional[List[tuple]] = None,
         adjacency_matrix: Optional[np.ndarray] = None,
+        features: Optional[np.ndarray] = None,
         model_path: str = "saved_models/model.bin",
     ):
         pass

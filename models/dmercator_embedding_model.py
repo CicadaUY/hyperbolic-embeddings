@@ -16,6 +16,7 @@ class DMercatorModel(BaseHyperbolicModel):
         self,
         edge_list: Optional[List[Tuple[str, str]]] = None,
         adjacency_matrix: Optional[np.ndarray] = None,
+        features: Optional[np.ndarray] = None,
         model_path: str = "saved_models/model.bin",
     ):
         if edge_list is not None:

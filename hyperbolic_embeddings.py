@@ -10,6 +10,7 @@ from models.dmercator_embedding_model import DMercatorModel
 from models.hydra_embedding_model import HydraModel
 from models.lorentz_embedding_model import LorentzEmbeddingsModel
 from models.poincare_embedding_model import PoincareEmbeddingModel
+from models.poincare_maps_model import PoincareMapsModel
 
 
 class HyperbolicEmbeddings:
@@ -18,27 +19,30 @@ class HyperbolicEmbeddings:
         self.embedding_type = embedding_type
         self.model = self._load_model(embedding_type, config)
 
-    def _load_model(self, embedding_type, config) -> BaseHyperbolicModel:
+    def _load_model(self, embedding_type, config) -> BaseHyperbolicModel:  # Add argument for polar o cartesian
         if embedding_type == "poincare_embeddings":
             return PoincareEmbeddingModel(config)
         elif embedding_type == "lorentz":
             return LorentzEmbeddingsModel(config)
         elif embedding_type == "poincare_maps":
-            return NotImplementedError
+            return PoincareMapsModel(config)
         elif embedding_type == "dmercator":
             return DMercatorModel(config)
         elif embedding_type == "hydra":  # R con código de Python
             return HydraModel(config)
         else:
-            raise ValueError(f"Unsupported model type: {embedding_type}")
+            raise ValueError(
+                f"Unsupported model type: {embedding_type}. Choose a value from ['poincare_embeddings', 'poincare_maps', 'lorentz, 'dmercator', 'hydra']"
+            )
 
     def train(
         self,
         edge_list: Optional[List[tuple]] = None,
         adjacency_matrix: Optional[np.ndarray] = None,
+        features: Optional[np.ndarray] = None,
         model_path: str = "saved_models/model.bin",
     ):
-        self.model.train(edge_list, adjacency_matrix, model_path)
+        self.model.train(edge_list, adjacency_matrix, features, model_path)
 
     def get_node_embedding(self, node_id: str, model_path: Optional[str] = None):
         return self.model.get_embedding(node_id, model_path)
@@ -53,7 +57,13 @@ class HyperbolicEmbeddings:
         t_vals = np.linspace(0, 1, num_points)
         return np.array([(np.sin((1 - t) * omega) / np.sin(omega)) * p1 + (np.sin(t * omega) / np.sin(omega)) * p2 for t in t_vals])
 
-    def plot_embeddings(self, labels: Optional[List[str]] = None, edge_list: Optional[List[Tuple]] = None, save_path: Optional[str] = None):
+    def plot_embeddings(
+        self,
+        labels: Optional[List[str]] = None,
+        edge_list: Optional[List[Tuple]] = None,
+        save_path: Optional[str] = None,
+        plot_geodesic=False,
+    ):
         embeddings = self.get_all_embeddings()  # Must be implemented by each model
         if embeddings.shape[1] > 2:
             warnings.warn(f"Embedding dimension is {embeddings.shape[1]}; plotting only the first 2 dimensions.")
@@ -65,10 +75,15 @@ class HyperbolicEmbeddings:
 
         if edge_list:
             for u, v in edge_list:
-                p1 = embeddings[u][:2]
-                p2 = embeddings[v][:2]
-                geodesic = self.get_geodesic(p1, p2)
-                ax.plot(geodesic[:, 0], geodesic[:, 1], color="gray", linewidth=0.5, alpha=0.5, linestyle="--", zorder=1)
+                if plot_geodesic:
+                    p1 = embeddings[u][:2]
+                    p2 = embeddings[v][:2]
+                    geodesic = self.get_geodesic(p1, p2)
+                    ax.plot(geodesic[:, 0], geodesic[:, 1], color="gray", linewidth=0.5, alpha=0.5, linestyle="--", zorder=1)
+                else:
+                    x_vals = [x[u], x[v]]
+                    y_vals = [y[u], y[v]]
+                    ax.plot(x_vals, y_vals, color="gray", linewidth=0.5, alpha=0.5, zorder=1)
 
         if labels:
             labels = np.array(labels)
