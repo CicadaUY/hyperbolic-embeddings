@@ -11,7 +11,8 @@ from math import acosh, pi, sqrt
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.linalg import eigh
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize_scalar, minimize
+from numpy.random import default_rng
 
 
 def hydra(D, dim=2, curvature=1, alpha=1.1, equi_adj=0.5, control=None):
@@ -362,3 +363,117 @@ def outer_hyper_line(x0, aux, dist, t):
         ndarray: Points along the hyperbolic geodesic.
     """
     return np.outer(np.cosh(t * dist), x0) + np.outer(np.sinh(t * dist), aux)
+
+def hydra_plus(D, dim=2, curvature=1.0, alpha=1.1, equi_adj=0.5, control=None,
+               curvature_bias=1.0, curvature_freeze=True, curvature_max=None, maxit=1000, seed=None, **kwargs):
+    """
+    Hydra+ with optional curvature optimization and stress minimization.
+
+    Parameters:
+        D (ndarray): Distance matrix.
+        dim (int): Target embedding dimension.
+        curvature (float): Initial curvature.
+        alpha (float): Parameter for radial rescaling.
+        equi_adj (float): Equiangular adjustment (only 2D).
+        control (dict): Options for hydra.
+        curvature_bias (float): Multiplier to apply to curvature before refinement.
+        curvature_freeze (bool): If True, curvature is not optimized.
+        curvature_max (float or None): Upper bound for curvature (auto heuristic if None).
+        maxit (int): Maximum number of iterations for optimizer.
+        seed (int or None): Random seed for jittering.
+        **kwargs: Extra parameters passed to optimizer.
+
+    Returns:
+        dict: Optimized embedding (same format as hydra).
+    """
+    n = D.shape[0]
+    rng = default_rng(seed)
+
+    # Step 1: Initial HYDRA embedding
+    if control is None:
+        control = {}
+    control["polar"] = False
+    h_embed = hydra(D, dim=dim, curvature=curvature, alpha=alpha, equi_adj=equi_adj, control=control)
+
+    # Step 2: Convert to hyperboloid coordinates and add jitter
+    X0 = poincare_to_hyper(h_embed["r"], h_embed["directional"])
+    x0 = X0.flatten()
+    x0 += rng.normal(0, 1e-4, size=x0.shape)
+
+    # Step 3: Handle curvature optimization
+    if not curvature_freeze:
+        x0 = np.append(x0, h_embed["curvature"])
+
+    # Step 4: Set optimization bounds
+    lower = np.full_like(x0, -np.inf)
+    upper = np.full_like(x0, np.inf)
+    if not curvature_freeze:
+        if curvature_max is None:
+            curvature_max = (24 / np.max(D)) ** 2
+        lower[-1] = 1e-4
+        upper[-1] = curvature_max
+
+    # Step 5: Define objective and gradient
+    def objective(x):
+        return stress_objective(x, n, dim, D, curvature=None if not curvature_freeze else curvature_bias * h_embed["curvature"])
+
+    def gradient(x):
+        return stress_gradient(x, n, dim, D, curvature=None if not curvature_freeze else curvature_bias * h_embed["curvature"])
+
+    # Step 6: Run optimization
+    result = minimize(objective, x0, jac=gradient, method='L-BFGS-B', bounds=list(zip(lower, upper)),
+                      options={'maxiter': maxit, 'disp': True}, **kwargs)
+
+    # Step 7: Convert back to Poincaré coordinates
+    if not curvature_freeze:
+        curv_opt = result.x[-1]
+        coords = result.x[:-1].reshape(n, dim)
+    else:
+        curv_opt = h_embed["curvature"]
+        coords = result.x.reshape(n, dim)
+
+    poincare = hyper_to_poincare(coords)
+    poincare["curvature"] = curv_opt
+    poincare["curvature_max"] = curvature_max
+    poincare["convergence_code"] = result.status
+    poincare["stress"] = get_stress(poincare["r"], poincare["directional"], curv_opt, D)
+
+    return poincare
+
+def stress_objective(x, nrows, ncols, dist, curvature=None):
+    if curvature is None:
+        x, curvature = x[:-1], x[-1]
+    x = x.reshape(nrows, ncols)
+    X = x @ x.T
+    u_tilde = np.sqrt(np.diag(X) + 1).reshape(-1, 1)
+    H = X - u_tilde @ u_tilde.T
+    D_hat = 1 / np.sqrt(curvature) * np.arccosh(np.maximum(-H, 1))
+    np.fill_diagonal(D_hat, 0)
+    return 0.5 * np.sum((D_hat - dist) ** 2)
+
+
+def stress_gradient(x, nrows, ncols, dist, curvature=None):
+    if curvature is None:
+        x, curvature = x[:-1], x[-1]
+        c_grad = True
+    else:
+        c_grad = False
+    x = x.reshape(nrows, ncols)
+    X = x @ x.T
+    u_tilde = np.sqrt(np.diag(X) + 1).reshape(-1, 1)
+    H = X - u_tilde @ u_tilde.T
+    H = np.minimum(H, -1 - np.finfo(float).eps)
+    D_hat = 1 / np.sqrt(curvature) * np.arccosh(-H)
+    np.fill_diagonal(D_hat, 0)
+
+    A = (D_hat - dist) / (np.sqrt(curvature * (H**2 - 1)))
+    np.fill_diagonal(A, 0)
+    B = (1 / u_tilde) @ u_tilde.T
+    G = 2 * ((np.sum(A * B, axis=1).reshape(-1, 1) * x) - A @ x)
+    z = G.flatten()
+
+    if c_grad:
+        grad_curv = -0.5 * np.sum((D_hat - dist) * D_hat) / curvature
+        z = np.append(z, grad_curv)
+
+    return z
