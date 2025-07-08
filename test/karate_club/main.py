@@ -13,7 +13,7 @@ def main():
         "--embedding_type",
         type=str,
         required=True,
-        choices=["poincare_embeddings", "lorentz", "dmercator", "hydra", "poincare_maps"],
+        choices=["poincare_embeddings", "lorentz", "dmercator", "hydra", "poincare_maps", "hypermap"],
         help="Type of embedding model to use.",
     )
     parser.add_argument("--model_dir", type=str, default="saved_models/karate_club", help="Directory to save the trained model.")
@@ -34,11 +34,10 @@ def main():
         "dmercator": {"dim": 1},
         "hydra": {"dim": 2},
         "poincare_maps": {"dim": 2, "epochs": 1000},
+        "hypermap": {},
     }
 
     embedding_type = args.embedding_type
-    if embedding_type not in configurations:
-        raise ValueError(f"Unknown embedding type: {embedding_type}")
 
     config = configurations[embedding_type]
     os.makedirs(args.model_dir, exist_ok=True)
@@ -50,7 +49,7 @@ def main():
     print(f"Training {embedding_type} embeddings...")
     embedding_runner = HyperbolicEmbeddings(embedding_type=embedding_type, config=config)
 
-    if embedding_type == "hydra" or "poincare_maps":
+    if embedding_type == "hydra" or "poincare_maps" or "lorentz":
         embedding_runner.train(adjacency_matrix=A, model_path=model_path)
     else:
         embedding_runner.train(edge_list=edge_list, model_path=model_path)

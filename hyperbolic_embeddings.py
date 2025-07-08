@@ -1,5 +1,5 @@
 import warnings
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Type
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
@@ -8,6 +8,7 @@ import numpy as np
 from models.base_hyperbolic_model import BaseHyperbolicModel
 from models.dmercator_embedding_model import DMercatorModel
 from models.hydra_embedding_model import HydraModel
+from models.hypermap_embedding_model import HypermapEmbeddingModel
 from models.lorentz_embedding_model import LorentzEmbeddingsModel
 from models.poincare_embedding_model import PoincareEmbeddingModel
 from models.poincare_maps_model import PoincareMapsModel
@@ -15,25 +16,25 @@ from models.poincare_maps_model import PoincareMapsModel
 
 class HyperbolicEmbeddings:
 
+    MODEL_REGISTRY: Dict[str, Type["BaseHyperbolicModel"]] = {
+        "poincare_embeddings": PoincareEmbeddingModel,
+        "lorentz": LorentzEmbeddingsModel,
+        "poincare_maps": PoincareMapsModel,
+        "dmercator": DMercatorModel,
+        "hydra": HydraModel,
+        "hypermap": HypermapEmbeddingModel,
+    }
+
     def __init__(self, embedding_type: str, config: Dict):
         self.embedding_type = embedding_type
         self.model = self._load_model(embedding_type, config)
 
-    def _load_model(self, embedding_type, config) -> BaseHyperbolicModel:  # Add argument for polar o cartesian
-        if embedding_type == "poincare_embeddings":
-            return PoincareEmbeddingModel(config)
-        elif embedding_type == "lorentz":
-            return LorentzEmbeddingsModel(config)
-        elif embedding_type == "poincare_maps":
-            return PoincareMapsModel(config)
-        elif embedding_type == "dmercator":
-            return DMercatorModel(config)
-        elif embedding_type == "hydra":  # R con código de Python
-            return HydraModel(config)
-        else:
-            raise ValueError(
-                f"Unsupported model type: {embedding_type}. Choose a value from ['poincare_embeddings', 'poincare_maps', 'lorentz, 'dmercator', 'hydra']"
-            )
+    def _load_model(self, embedding_type: str, config: Dict) -> "BaseHyperbolicModel":
+        model_class = self.MODEL_REGISTRY.get(embedding_type)
+        if not model_class:
+            valid_keys = "', '".join(self.MODEL_REGISTRY.keys())
+            raise ValueError(f"Unsupported model type: '{embedding_type}'. " f"Choose from: '{valid_keys}'")
+        return model_class(config)
 
     def train(
         self,
@@ -64,9 +65,9 @@ class HyperbolicEmbeddings:
         labels: Optional[List[str]] = None,
         edge_list: Optional[List[Tuple]] = None,
         save_path: Optional[str] = None,
-        plot_geodesic=True,
+        plot_geodesic=False,
     ):
-        embeddings = self.get_all_embeddings()  # Must be implemented by each model
+        embeddings = self.get_all_embeddings()
         if embeddings.shape[1] > 2:
             warnings.warn(f"Embedding dimension is {embeddings.shape[1]}; plotting only the first 2 dimensions.")
 
@@ -104,7 +105,7 @@ class HyperbolicEmbeddings:
         for i in range(len(x)):
             ax.text(x[i], y[i], str(i), fontsize=8, ha="center", va="center", zorder=3)
 
-        # Draw boundary circle (e.g., for Poincaré disk)
+        # Draw boundary circle
         ax.add_artist(plt.Circle((0, 0), 1, fill=False, color="black", linestyle="--"))
         ax.set_xlim(-1.1, 1.1)
         ax.set_ylim(-1.1, 1.1)
@@ -113,6 +114,7 @@ class HyperbolicEmbeddings:
 
         if save_path:
             plt.savefig(save_path, bbox_inches="tight")
+            plt.show()
             print(f"Plot saved to {save_path}")
         else:
             plt.show()

@@ -1,3 +1,4 @@
+import logging
 import pickle
 from typing import Dict, List, Optional, Tuple
 
@@ -5,23 +6,31 @@ import networkx as nx
 import numpy as np
 
 from models.base_hyperbolic_model import BaseHyperbolicModel
-from models.hydra.hydra import hydra
+from models.hypermap.python import pyhypermap
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
-class HydraModel(BaseHyperbolicModel):
+class HypermapEmbeddingModel(BaseHyperbolicModel):
     def __init__(self, config: Dict):
-        self.dim = config.get("dim", 2)
-        self.curvature = config.get("curvature", 1)
-        self.alpha = config.get("alpha", 1.1)
-        self.equi_adj = config.get("equi_adj", 0.5)
+        self.k_min = config.get("k_min", 4)
+        self.T = config.get("T", 0.5)
+        self.zeta = config.get("zeta", 1.0)
+        self.k_speedup = config.get("k_speedup", 0)
+        self.m_in = config.get("m_in", -1)
+        self.L_in = config.get("L_in", -1)
+        self.corrections = config.get("corrections", True)
+        self._edge_file = "tmp/data.edges"
+        self.logger = logging.getLogger(__name__)
 
     def train(
         self,
-        edge_list: Optional[List[Tuple[str, str]]] = None,
+        edge_list: Optional[List[tuple]] = None,
         adjacency_matrix: Optional[np.ndarray] = None,
         features: Optional[np.ndarray] = None,
         model_path: str = "saved_models/model.bin",
     ):
+
         if edge_list is not None:
             n = max(max(u, v) for u, v in edge_list) + 1
             G = nx.DiGraph()
@@ -32,25 +41,20 @@ class HydraModel(BaseHyperbolicModel):
         else:
             raise ValueError("You must provide either edge_list or adjacency_matrix.")
 
-        # Build distance matrix
-        lengths = dict(nx.all_pairs_shortest_path_length(G))
-        n = G.number_of_nodes()
-        D = np.zeros((n, n))
-        for i in range(n):
-            for j in range(n):
-                if i in lengths and j in lengths[i]:
-                    D[i, j] = lengths[i][j]
-
-        # Run Hydra
-        self.embeddings = hydra(D, self.dim, self.curvature, self.alpha, self.equi_adj)
+        gamma_hat, _ = pyhypermap.estimate_gamma(G, k_min=self.k_min)
+        coords_raw = pyhypermap.embed_from_nxgraph(
+            G, gamma_hat, T=self.T, zeta=self.zeta, k_speedup=self.k_speedup, m_in=self.m_in, L_in=self.L_in, corrections=self.corrections
+        )
+        self.embeddings = np.array([(tple[1], tple[2]) for tple in coords_raw])
 
         # Save embeddings
         with open(model_path, "wb") as f:
             pickle.dump(self.embeddings, f)
 
     def polar_array_to_cartesian(self, theta: np.ndarray, radius: np.ndarray) -> np.ndarray:
-        x = radius * np.cos(theta)
-        y = radius * np.sin(theta)
+        rho = np.tanh(radius / 2)
+        x = rho * np.cos(theta)
+        y = rho * np.sin(theta)
         return np.stack((x, y), axis=1)
 
     def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
@@ -58,8 +62,8 @@ class HydraModel(BaseHyperbolicModel):
             with open(model_path, "rb") as f:
                 self.embeddings = pickle.load(f)
 
-        theta = self.embeddings["theta"]
-        radius = self.embeddings["r"]
+        radius = self.embeddings[:, 1]
+        theta = self.embeddings[:, 0]
         _embeddings = self.polar_array_to_cartesian(theta, radius)
 
         return _embeddings

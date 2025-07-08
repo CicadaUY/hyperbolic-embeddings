@@ -45,8 +45,6 @@ def main():
     }
 
     embedding_type = args.embedding_type
-    if embedding_type not in configurations:
-        raise ValueError(f"Unknown embedding type: {embedding_type}")
 
     config = configurations[embedding_type]
     os.makedirs(args.model_dir, exist_ok=True)
@@ -58,7 +56,7 @@ def main():
     print(f"Training {embedding_type} embeddings...")
     embedding_runner = HyperbolicEmbeddings(embedding_type=embedding_type, config=config)
 
-    if embedding_type == "hydra" or "poincare_maps":
+    if embedding_type == "hydra" or "poincare_maps" or "lorentz":
         embedding_runner.train(adjacency_matrix=A, model_path=model_path)
     else:
         embedding_runner.train(edge_list=edge_list, model_path=model_path)
