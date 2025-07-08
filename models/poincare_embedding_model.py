@@ -63,7 +63,11 @@ class PoincareEmbeddingModel(BaseHyperbolicModel):
     def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
         if model_path:
             self.model = PoincareModel.load(model_path)
-        return self.model.kv.vectors
+        vectors = []
+        node_ids = sorted(self.model.kv.index_to_key, key=lambda k: int(k))
+        for k in node_ids:
+            vectors.append(self.model.kv.get_vector(k))
+        return np.array(vectors)
 
     def most_similar(self, node_id: str, topn: int = 5, model_path: Optional[str] = None) -> List[Tuple[str, float]]:
         if model_path:

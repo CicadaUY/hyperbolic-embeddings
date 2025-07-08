@@ -53,21 +53,44 @@ class HyperbolicEmbeddings:
     def get_all_embeddings(self, model_path: Optional[str] = None):
         return self.model.get_all_embeddings(model_path)
 
-    def get_geodesic(self, p1, p2):
-        omega = np.arccos(np.dot(p1, p2) / (np.linalg.norm(p1) * np.linalg.norm(p2)))
-        t = np.linspace(0, 1)
+    def plot_geodesic_arc(self, p1, p2, ax):
+        """
+        Plot a hyperbolic geodesic between p1 and p2 on the Poincaré disk.
+        """
+        z1, z2 = complex(*p1), complex(*p2)
 
-        line = []
-        for t in np.linspace(0, 1):
-            line.append(np.sin((1 - t) * omega) / np.sin(omega) * p1 + np.sin(t * omega) / np.sin(omega) * p2)
-        return np.array(line)
+        # Check if it's a straight line through origin
+        if np.isclose(np.cross(p1, p2), 0):
+            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], "b-", linewidth=0.5, alpha=0.6)
+            return
+
+        denom = np.imag(np.conj(z1) * z2 - z1 * np.conj(z2))
+        if np.isclose(denom, 0):
+            return
+
+        center = (z1 * abs(z2) ** 2 - z2 * abs(z1) ** 2 + z1 - z2) / denom * 1j
+        center = complex(center)
+        radius = abs(z1 - center)
+
+        theta1 = np.angle(z1 - center)
+        theta2 = np.angle(z2 - center)
+
+        # Ensure we go the shorter arc
+        if theta2 < theta1:
+            theta1, theta2 = theta2, theta1
+        if theta2 - theta1 > np.pi:
+            theta1, theta2 = theta2, theta1 + 2 * np.pi
+
+        angles = np.linspace(theta1, theta2, 100)
+        arc = center + radius * np.exp(1j * angles)
+        ax.plot(arc.real, arc.imag, "gray", linewidth=0.5, alpha=0.6, linestyle="--")
 
     def plot_embeddings(
         self,
         labels: Optional[List[str]] = None,
         edge_list: Optional[List[Tuple]] = None,
         save_path: Optional[str] = None,
-        plot_geodesic=False,
+        plot_geodesic=True,
     ):
         embeddings = self.get_all_embeddings()
         if embeddings.shape[1] > 2:
@@ -80,15 +103,12 @@ class HyperbolicEmbeddings:
 
         if edge_list:
             for u, v in edge_list:
+                p1 = (x[u], y[u])
+                p2 = (x[v], y[v])
                 if plot_geodesic:
-                    p1 = embeddings[u][:2]
-                    p2 = embeddings[v][:2]
-                    geodesic = self.get_geodesic(p1, p2)
-                    ax.plot(geodesic[:, 0], geodesic[:, 1], color="gray", linewidth=0.5, alpha=0.5, linestyle="--", zorder=1)
+                    self.plot_geodesic_arc(p1, p2, ax)
                 else:
-                    x_vals = [x[u], x[v]]
-                    y_vals = [y[u], y[v]]
-                    ax.plot(x_vals, y_vals, color="gray", linewidth=0.5, alpha=0.5, zorder=1)
+                    ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color="gray", linewidth=0.5, alpha=0.5, zorder=1)
 
         if labels:
             labels = np.array(labels)
@@ -107,7 +127,7 @@ class HyperbolicEmbeddings:
         for i in range(len(x)):
             ax.text(x[i], y[i], str(i), fontsize=8, ha="center", va="center", zorder=3)
 
-        # Draw boundary circle
+        # Draw Poincaré disk boundary
         ax.add_artist(plt.Circle((0, 0), 1, fill=False, color="black", linestyle="--"))
         ax.set_xlim(-1.1, 1.1)
         ax.set_ylim(-1.1, 1.1)
