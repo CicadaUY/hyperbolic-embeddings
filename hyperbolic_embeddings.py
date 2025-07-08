@@ -8,6 +8,7 @@ import numpy as np
 from models.base_hyperbolic_model import BaseHyperbolicModel
 from models.dmercator_embedding_model import DMercatorModel
 from models.hydra_embedding_model import HydraModel
+from models.hydra_plus_embedding_model import HydraPlusModel
 from models.hypermap_embedding_model import HypermapEmbeddingModel
 from models.lorentz_embedding_model import LorentzEmbeddingsModel
 from models.poincare_embedding_model import PoincareEmbeddingModel
@@ -23,6 +24,7 @@ class HyperbolicEmbeddings:
         "dmercator": DMercatorModel,
         "hydra": HydraModel,
         "hypermap": HypermapEmbeddingModel,
+        "hydra_plus": HydraPlusModel,
     }
 
     def __init__(self, embedding_type: str, config: Dict):

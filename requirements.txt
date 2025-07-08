@@ -1,9 +1,9 @@
-dmercator==1.0.0
-gensim==3.8.3
+gensim
 matplotlib
 numpy
 pandas
 pre-commit
+pybind11
 scikit-learn
 scipy
 seaborn

@@ -13,7 +13,7 @@ def main():
         "--embedding_type",
         type=str,
         required=True,
-        choices=["poincare_embeddings", "lorentz", "dmercator", "hydra", "poincare_maps", "hypermap"],
+        choices=["poincare_embeddings", "lorentz", "dmercator", "hydra", "poincare_maps", "hypermap", "hydra_plus"],
         help="Type of embedding model to use.",
     )
     parser.add_argument("--model_dir", type=str, default="saved_models/karate_club", help="Directory to save the trained model.")
@@ -35,6 +35,7 @@ def main():
         "hydra": {"dim": 2},
         "poincare_maps": {"dim": 2, "epochs": 1000},
         "hypermap": {},
+        "hydra_plus": {"dim": 2},
     }
 
     embedding_type = args.embedding_type

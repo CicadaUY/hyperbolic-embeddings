@@ -8,6 +8,7 @@ Supported models include:
 - Poincare Maps
 - D-Mercator
 - Hydra
+- Hydra Plus
 - Hypermap
 
 
@@ -18,9 +19,13 @@ Supported models include:
 - Python 3.9+ is required
 
 ### Clone required repositories
-```git clone https://github.com/CicadaUY/d-mercator.git```
-```git clone https://github.com/CicadaUY/hypermap.git```
-```git clone https://github.com/CicadaUY/lorentz-embeddings.git```
+
+``` 
+cd models/
+git clone https://github.com/CicadaUY/d-mercator.git
+git clone https://github.com/CicadaUY/hypermap.git
+git clone https://github.com/CicadaUY/lorentz-embeddings.git
+```
 
 ### Build and install dependencies 
 
