@@ -32,6 +32,7 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
         self.save_step = config.get("save_step", 100)
         self.shuffle = config.get("shuffle", True)
         self.model = None
+        self.num_nodes = config.get("num_nodes", None)
 
     def train(
         self,
@@ -98,14 +99,14 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
             self.model = Lorentz(n_items=self.num_nodes, dim=self.dim + 1)
             self.model.load_state_dict(torch.load(model_path))
 
-        node_index = int(node_id) + 1  # +1 due to padding idx
+        node_index = int(node_id) + 1  # due to padding idx
         return self.model.get_lorentz_table()[node_index]
 
     def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
         if model_path:
             self.model = Lorentz(n_items=self.num_nodes, dim=self.dim + 1)
             self.model.load_state_dict(torch.load(model_path))
-        return self.model.get_lorentz_table()[1:]
+        return self.model.get_lorentz_table()
 
     def most_similar(self, node_id: str, topn: int = 5, model_path: Optional[str] = None) -> List[Tuple[str, float]]:
         pass

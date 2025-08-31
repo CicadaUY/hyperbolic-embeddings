@@ -1,6 +1,6 @@
 gensim
 matplotlib
-numpy
+numpy==1.24.0
 pandas
 pre-commit
 pybind11
@@ -11,4 +11,5 @@ squad-df
 tensorboardx
 tensorflow
 torch>=1.9
+torch_geometric
 tqdm

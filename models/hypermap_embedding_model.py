@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 
 class HypermapEmbeddingModel(BaseHyperbolicModel):
     def __init__(self, config: Dict):
-        self.k_min = config.get("k_min", 4)
+        self.k_min = config.get("k_min", 3)
         self.T = config.get("T", 0.5)
         self.zeta = config.get("zeta", 1.0)
         self.k_speedup = config.get("k_speedup", 0)
@@ -52,7 +52,7 @@ class HypermapEmbeddingModel(BaseHyperbolicModel):
             pickle.dump(self.embeddings, f)
 
     def polar_array_to_cartesian(self, theta: np.ndarray, radius: np.ndarray) -> np.ndarray:
-        rho = np.tanh(radius / 2)
+        rho = radius
         x = rho * np.cos(theta)
         y = rho * np.sin(theta)
         return np.stack((x, y), axis=1)

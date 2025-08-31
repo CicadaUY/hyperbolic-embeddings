@@ -1,5 +1,7 @@
 import argparse
+import json
 import os
+import pickle
 
 import networkx as nx
 import numpy as np
@@ -8,7 +10,7 @@ from hyperbolic_embeddings import HyperbolicEmbeddings
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train and plot hyperbolic embeddings for the Karate Club graph.")
+    parser = argparse.ArgumentParser(description="Train and plot hyperbolic embeddings for Cora graph.")
     parser.add_argument(
         "--embedding_type",
         type=str,
@@ -16,21 +18,29 @@ def main():
         choices=["poincare_embeddings", "lorentz", "dmercator", "hydra", "poincare_maps", "hypermap", "hydra_plus"],
         help="Type of embedding model to use.",
     )
-    parser.add_argument("--model_dir", type=str, default="saved_models/karate_club", help="Directory to save the trained model.")
-    parser.add_argument("--plot_dir", type=str, default="test/karate_club/plots", help="Directory to save the plots.")
+    parser.add_argument("--model_dir", type=str, default="saved_models/cora", help="Directory to save the trained model.")
+    parser.add_argument("--plot_dir", type=str, default="test/cora/plots", help="Directory to save the plots.")
 
     args = parser.parse_args()
 
-    # Load Karate Club graph
-    G = nx.karate_club_graph()
-    edge_list = list(G.edges())
+    # Load CORA graph
+    with open("./data/Cora/cora_graph.pkl", "rb") as f:
+        edge_list = pickle.load(f)
+    with open("./data/Cora/cora_graph.json", "r") as f:
+        graph_data = json.load(f)
+
+    # Build networkx graph from edge index
+    G = nx.Graph()
+    G.add_edges_from(edge_list)
+
     A = nx.to_numpy_array(G)
-    labels = [G.nodes[n]["club"] for n in sorted(G.nodes())]
+
+    labels = graph_data["y"]
 
     # Embedding configs
     configurations = {
         "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
-        "lorentz": {"dim": 2, "epochs": 50000, "batch_size": 256, "num_nodes": 31},
+        "lorentz": {"dim": 2, "epochs": 50000, "batch_size": 256},
         "dmercator": {"dim": 1},
         "hydra": {"dim": 2},
         "poincare_maps": {"dim": 2, "epochs": 1000},
@@ -55,7 +65,7 @@ def main():
     else:
         embedding_runner.train(edge_list=edge_list, model_path=model_path)
 
-    # embedding_runner.plot_embeddings(labels=labels, edge_list=edge_list, model_path="/home/sofia/hyperbolic/hyperbolic-embeddings/models/lorentz/ckpt/21600 tree_bin  2025-07-01 00:30:10.326638.ckpt", save_path=plot_path)
+    embeddings = embedding_runner.get_all_embeddings(model_path)
     embedding_runner.plot_embeddings(labels=labels, edge_list=edge_list, save_path=plot_path)
 
 

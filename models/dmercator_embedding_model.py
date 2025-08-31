@@ -37,9 +37,8 @@ class DMercatorModel(BaseHyperbolicModel):
         self.embeddings_path = model_path + ".inf_coord"
 
     def polar_array_to_cartesian(self, theta: np.ndarray, radius: np.ndarray) -> np.ndarray:
-        rho = np.tanh(radius / 2)
-        x = rho * np.cos(theta)
-        y = rho * np.sin(theta)
+        x = radius * np.cos(theta)
+        y = radius * np.sin(theta)
         return np.stack((x, y), axis=1)
 
     def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
