@@ -99,7 +99,7 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
             self.model = Lorentz(n_items=self.num_nodes, dim=self.dim + 1)
             self.model.load_state_dict(torch.load(model_path))
 
-        node_index = int(node_id) + 1  # due to padding idx
+        node_index = int(node_id) + 1  # +1 due to padding idx
         return self.model.get_lorentz_table()[node_index]
 
     def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:

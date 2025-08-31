@@ -18,6 +18,13 @@ def main():
     )
     parser.add_argument("--model_dir", type=str, default="saved_models/tree_test", help="Directory to save the trained model.")
     parser.add_argument("--plot_dir", type=str, default="test/tree_test/plots", help="Directory to save the plots.")
+    parser.add_argument(
+        "--output_space",
+        type=str,
+        default="poincare",
+        choices=["poincare", "hyperboloid", "klein", "hemisphere", "half_plane", "spherical"],
+        help="Space to plot embeddings in.",
+    )
 
     args = parser.parse_args()
 
@@ -35,15 +42,15 @@ def main():
     edge_list = list(G.edges())
     labels = list(range(n))
 
-    # Embedding configs
+    # Embedding configs with input_space specification
     configurations = {
-        "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
-        "lorentz": {"dim": 2, "epochs": 50000, "batch_size": 256},
-        "dmercator": {"dim": 1},
-        "hydra": {"dim": 2},
-        "poincare_maps": {"dim": 2, "epochs": 1000},
-        "hypermap": {},
-        "hydra_plus": {"dim": 2},
+        "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1, "input_space": "poincare"},
+        "lorentz": {"dim": 2, "epochs": 50000, "batch_size": 256, "input_space": "hyperboloid", "num_nodes": 31},
+        "dmercator": {"dim": 1, "input_space": "hyperboloid"},
+        "hydra": {"dim": 2, "input_space": "hyperboloid"},
+        "poincare_maps": {"dim": 2, "epochs": 1000, "input_space": "poincare"},
+        "hypermap": {"dim": 3, "input_space": "hyperboloid"},
+        "hydra_plus": {"dim": 2, "input_space": "hyperboloid"},
     }
 
     embedding_type = args.embedding_type
@@ -53,7 +60,7 @@ def main():
     os.makedirs(args.plot_dir, exist_ok=True)
 
     model_path = os.path.join(args.model_dir, f"{embedding_type}_embeddings.bin")
-    plot_path = os.path.join(args.plot_dir, f"{embedding_type}_embeddings.pdf")
+    plot_path = os.path.join(args.plot_dir, f"{embedding_type}_{args.output_space}_embeddings.pdf")
 
     print(f"Training {embedding_type} embeddings...")
     embedding_runner = HyperbolicEmbeddings(embedding_type=embedding_type, config=config)
@@ -63,7 +70,40 @@ def main():
     else:
         embedding_runner.train(edge_list=edge_list, model_path=model_path)
 
-    embedding_runner.plot_embeddings(labels=labels, edge_list=edge_list, save_path=plot_path)
+    # Get embeddings for plotting
+    embeddings = embedding_runner.get_all_embeddings(model_path)
+
+    print(f"Embeddings saved to {model_path}")
+
+    # Print model information
+    model_info = embedding_runner.get_model_info()
+    print(f"\nModel Information:")
+    print(f"  Embedding Type: {model_info['embedding_type']}")
+    print(f"  Model Class: {model_info['model_class']}")
+    print(f"  Input Space: {config['input_space']}")
+    print(f"  Output Space: {args.output_space}")
+    print(f"  Embedding Shape: {embeddings.shape}")
+
+    # Validate embeddings
+    embedding_runner.validate_embeddings(embeddings, config["input_space"])
+
+    # Plot embeddings with new API
+    embedding_runner.plot_embeddings(
+        embeddings=embeddings,
+        input_space=config["input_space"],
+        output_space=args.output_space,
+        labels=labels,
+        edge_list=edge_list,
+        save_path=plot_path,
+        plot_geodesic=(args.output_space == "poincare"),  # Only plot geodesics for Poincaré
+        figsize=(10, 10),
+        point_size=150,
+        show_node_labels=True,
+        node_label_size=10,
+        edge_alpha=0.6,
+        edge_width=1.0,
+        colormap="viridis",
+    )
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import numpy as np
 
 from models.base_hyperbolic_model import BaseHyperbolicModel
 from models.hypermap.python import pyhypermap
+from utils.geometric_conversions import spherical_to_hyperboloid
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
@@ -51,11 +52,30 @@ class HypermapEmbeddingModel(BaseHyperbolicModel):
         with open(model_path, "wb") as f:
             pickle.dump(self.embeddings, f)
 
-    def polar_array_to_cartesian(self, theta: np.ndarray, radius: np.ndarray) -> np.ndarray:
-        rho = radius
-        x = rho * np.cos(theta)
-        y = rho * np.sin(theta)
-        return np.stack((x, y), axis=1)
+    # def polar_array_to_cartesian(self, theta: np.ndarray, radius: np.ndarray) -> np.ndarray:
+    #     # rho = np.tanh(radius / 2)
+    #     x = radius * np.cos(theta)
+    #     y = radius * np.sin(theta)
+    #     return np.stack((x, y), axis=1)
+
+    def spherical_to_hyperboloid_coordinates(self, theta: np.ndarray, radius: np.ndarray) -> np.ndarray:
+        """
+        Convert spherical coordinates (theta, radius) to hyperboloid coordinates.
+
+        Parameters:
+        - theta: Angular coordinates
+        - radius: Radial coordinates (distance from origin)
+
+        Returns:
+        - Hyperboloid coordinates (x, y, t)
+        """
+
+        spherical_coords = np.column_stack([radius, theta])
+
+        # Convert to hyperboloid coordinates
+        hyperboloid_coords = spherical_to_hyperboloid(spherical_coords)
+
+        return hyperboloid_coords
 
     def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
         if model_path:
@@ -64,7 +84,7 @@ class HypermapEmbeddingModel(BaseHyperbolicModel):
 
         radius = self.embeddings[:, 1]
         theta = self.embeddings[:, 0]
-        _embeddings = self.polar_array_to_cartesian(theta, radius)
+        _embeddings = self.spherical_to_hyperboloid_coordinates(theta, radius)
 
         return _embeddings
 

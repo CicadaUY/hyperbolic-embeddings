@@ -4,6 +4,7 @@ import dmercator
 import numpy as np
 
 from models.base_hyperbolic_model import BaseHyperbolicModel
+from utils.geometric_conversions import spherical_to_hyperboloid
 
 
 class DMercatorModel(BaseHyperbolicModel):
@@ -36,19 +37,34 @@ class DMercatorModel(BaseHyperbolicModel):
 
         self.embeddings_path = model_path + ".inf_coord"
 
-    def polar_array_to_cartesian(self, theta: np.ndarray, radius: np.ndarray) -> np.ndarray:
-        x = radius * np.cos(theta)
-        y = radius * np.sin(theta)
-        return np.stack((x, y), axis=1)
+    def spherical_to_hyperboloid_coordinates(self, theta: np.ndarray, radius: np.ndarray) -> np.ndarray:
+        """
+        Convert spherical coordinates (theta, radius) to hyperboloid coordinates.
+
+        Parameters:
+        - theta: Angular coordinates
+        - radius: Radial coordinates (distance from origin)
+
+        Returns:
+        - Hyperboloid coordinates (x, y, t)
+        """
+
+        spherical_coords = np.column_stack([radius, theta])
+
+        # Convert to hyperboloid coordinates
+        hyperboloid_coords = spherical_to_hyperboloid(spherical_coords)
+
+        return hyperboloid_coords
 
     def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
         if model_path:
-            self.embeddings_path = model_path
+            self.embeddings_path = model_path + ".inf_coord"
 
         theta = np.loadtxt(self.embeddings_path, usecols=[2])
         radius = np.loadtxt(self.embeddings_path, usecols=[3])
 
-        embeddings = self.polar_array_to_cartesian(theta, radius)
+        # Convert to hyperboloid coordinates instead of Poincaré
+        embeddings = self.spherical_to_hyperboloid_coordinates(theta, radius)
 
         return embeddings
 

@@ -145,7 +145,8 @@ class PoincareMapsModel(BaseHyperbolicModel):
 
     def get_embedding(self, node_id: str, model_path: Optional[str] = None) -> np.ndarray:
         if model_path:
-            self.model = PoincareEmbedding.load(model_path)
+            state = torch.load(model_path)
+            self.model.load_state_dict(state)
 
         embeddings = self.model.lt.weight.cpu().detach().numpy()
 
@@ -153,7 +154,8 @@ class PoincareMapsModel(BaseHyperbolicModel):
 
     def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
         if model_path:
-            self.model = PoincareEmbedding.load(model_path)
+            state = torch.load(model_path)
+            self.model.load_state_dict(state)
 
         return self.model.lt.weight.detach().cpu().numpy()
 
