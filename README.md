@@ -61,14 +61,8 @@ embedding_manager.plot_embeddings(labels=labels, edge_list=edge_list, save_path=
 
 ## Examples
 
-### Karate Club
-Run a demo embedding on the Karate Club dataset:
 
+### Tree Test
 ```
-python -m test.karate_club.main --embedding_type="hypermap"
-```
-
-### Tree Test\
-```
-python -m test.tree_test.main --embedding_type="hypermap"
+python -m test.tree_test.main --embedding_type='hypermap' --output_space='poincare'
 ```
