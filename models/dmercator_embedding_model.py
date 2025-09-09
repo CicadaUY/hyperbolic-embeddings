@@ -4,7 +4,7 @@ import dmercator
 import numpy as np
 
 from models.base_hyperbolic_model import BaseHyperbolicModel
-from utils.geometric_conversions import spherical_to_hyperboloid
+from utils.geometric_conversions import convert_coordinates
 
 
 class DMercatorModel(BaseHyperbolicModel):
@@ -12,6 +12,11 @@ class DMercatorModel(BaseHyperbolicModel):
         self.dim = config.get("dim", 1)
         self.beta = config.get("beta", -1)
         self._edge_file = "tmp/data.edges"
+
+    @property
+    def native_space(self) -> str:
+        """Get the native embedding space for this model."""
+        return "spherical"
 
     def train(
         self,
@@ -37,34 +42,24 @@ class DMercatorModel(BaseHyperbolicModel):
 
         self.embeddings_path = model_path + ".inf_coord"
 
-    def spherical_to_hyperboloid_coordinates(self, theta: np.ndarray, radius: np.ndarray) -> np.ndarray:
+    def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
         """
-        Convert spherical coordinates (theta, radius) to hyperboloid coordinates.
+        Get all embeddings in spherical coordinates (radius, theta).
 
         Parameters:
-        - theta: Angular coordinates
-        - radius: Radial coordinates (distance from origin)
+        - model_path: Optional path to load the model from (if not already loaded)
 
         Returns:
-        - Hyperboloid coordinates (x, y, t)
+        - np.ndarray: Array of shape (n_nodes, 2) containing [radius, theta] for each node
         """
-
-        spherical_coords = np.column_stack([radius, theta])
-
-        # Convert to hyperboloid coordinates
-        hyperboloid_coords = spherical_to_hyperboloid(spherical_coords)
-
-        return hyperboloid_coords
-
-    def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
         if model_path:
             self.embeddings_path = model_path + ".inf_coord"
 
         theta = np.loadtxt(self.embeddings_path, usecols=[2])
         radius = np.loadtxt(self.embeddings_path, usecols=[3])
 
-        # Convert to hyperboloid coordinates instead of Poincaré
-        embeddings = self.spherical_to_hyperboloid_coordinates(theta, radius)
+        # Return spherical coordinates as [radius, theta]
+        embeddings = np.column_stack([radius, theta])
 
         return embeddings
 
@@ -74,3 +69,14 @@ class DMercatorModel(BaseHyperbolicModel):
 
     def most_similar(self, node_id: str, topn: int = 5, model_path: Optional[str] = None) -> List[Tuple[str, float]]:
         pass
+
+    def to_hyperboloid(self, model_path: Optional[str] = None) -> np.ndarray:
+        """Convert spherical embeddings to hyperboloid coordinates."""
+        spherical_embeddings = self.get_all_embeddings(model_path)
+        # spherical_embeddings is [radius, theta], need to convert to hyperboloid
+        return convert_coordinates(spherical_embeddings, "spherical", "hyperboloid")
+
+    def to_poincare(self, model_path: Optional[str] = None) -> np.ndarray:
+        """Convert spherical embeddings to Poincaré coordinates."""
+        spherical_embeddings = self.get_all_embeddings(model_path)
+        return convert_coordinates(spherical_embeddings, "spherical", "poincare")

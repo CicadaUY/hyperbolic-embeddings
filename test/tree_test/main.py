@@ -42,15 +42,15 @@ def main():
     edge_list = list(G.edges())
     labels = list(range(n))
 
-    # Embedding configs with input_space specification
+    # Embedding configs (embedding_space now determined by model's native_space property)
     configurations = {
-        "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1, "input_space": "poincare"},
-        "lorentz": {"dim": 2, "epochs": 50000, "batch_size": 256, "input_space": "hyperboloid", "num_nodes": 31},
-        "dmercator": {"dim": 1, "input_space": "hyperboloid"},
-        "hydra": {"dim": 2, "input_space": "hyperboloid"},
-        "poincare_maps": {"dim": 2, "epochs": 1000, "input_space": "poincare"},
-        "hypermap": {"dim": 3, "input_space": "hyperboloid"},
-        "hydra_plus": {"dim": 2, "input_space": "hyperboloid"},
+        "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
+        "lorentz": {"dim": 2, "epochs": 10000, "batch_size": 1024, "num_nodes": 31},
+        "dmercator": {"dim": 1},
+        "hydra": {"dim": 2},
+        "poincare_maps": {"dim": 2, "epochs": 1000},
+        "hypermap": {"dim": 3},
+        "hydra_plus": {"dim": 2},
     }
 
     embedding_type = args.embedding_type
@@ -75,22 +75,25 @@ def main():
 
     print(f"Embeddings saved to {model_path}")
 
+    # Get the native embedding space from the model's property
+    native_embedding_space = embedding_runner.model.native_space
+
     # Print model information
     model_info = embedding_runner.get_model_info()
     print(f"\nModel Information:")
     print(f"  Embedding Type: {model_info['embedding_type']}")
     print(f"  Model Class: {model_info['model_class']}")
-    print(f"  Input Space: {config['input_space']}")
+    print(f"  Native Embedding Space: {native_embedding_space}")
     print(f"  Output Space: {args.output_space}")
     print(f"  Embedding Shape: {embeddings.shape}")
 
     # Validate embeddings
-    embedding_runner.validate_embeddings(embeddings, config["input_space"])
+    embedding_runner.validate_embeddings(embeddings, native_embedding_space)
 
     # Plot embeddings with new API
     embedding_runner.plot_embeddings(
         embeddings=embeddings,
-        input_space=config["input_space"],
+        embedding_space=native_embedding_space,
         output_space=args.output_space,
         labels=labels,
         edge_list=edge_list,

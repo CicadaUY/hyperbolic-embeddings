@@ -14,6 +14,7 @@ from models.base_hyperbolic_model import BaseHyperbolicModel
 from models.PoincareMaps.data import compute_rfa
 from models.PoincareMaps.model import PoincareDistance, PoincareEmbedding
 from models.PoincareMaps.rsgd import RiemannianSGD
+from utils.geometric_conversions import poincare_to_hyperboloid
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
@@ -34,6 +35,11 @@ class PoincareMapsModel(BaseHyperbolicModel):
         self.k_neighbours = config.get("k_neighbours", 15)
         self.device = config.get("device", "cuda")
         self.logger = logging.getLogger(__name__)
+
+    @property
+    def native_space(self) -> str:
+        """Get the native embedding space for this model."""
+        return "poincare"
 
     def train(
         self,
@@ -161,3 +167,12 @@ class PoincareMapsModel(BaseHyperbolicModel):
 
     def most_similar(self, node_id: str, topn: int = 5, model_path: Optional[str] = None) -> List[Tuple[str, float]]:
         pass
+
+    def to_hyperboloid(self, model_path: Optional[str] = None) -> np.ndarray:
+        """Convert Poincaré embeddings to hyperboloid coordinates."""
+        poincare_embeddings = self.get_all_embeddings(model_path)
+        return poincare_to_hyperboloid(poincare_embeddings)
+
+    def to_poincare(self, model_path: Optional[str] = None) -> np.ndarray:
+        """Return embeddings in Poincaré coordinates (already in Poincaré space)."""
+        return self.get_all_embeddings(model_path)

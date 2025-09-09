@@ -6,6 +6,7 @@ from gensim.models.poincare import PoincareModel
 from tqdm import trange
 
 from models.base_hyperbolic_model import BaseHyperbolicModel
+from utils.geometric_conversions import poincare_to_hyperboloid
 
 # Enable logging for gensim
 logging.basicConfig(format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO)
@@ -23,6 +24,11 @@ class PoincareEmbeddingModel(BaseHyperbolicModel):
         self.negs = config.get("negs", 50)
         self.burnin = config.get("burnin", 20)
         self.workers = config.get("train_threads", 1)
+
+    @property
+    def native_space(self) -> str:
+        """Get the native embedding space for this model."""
+        return "poincare"
 
     def train(
         self,
@@ -75,3 +81,12 @@ class PoincareEmbeddingModel(BaseHyperbolicModel):
         if node_id not in self.model.kv:
             raise KeyError(f"Node id '{node_id}' does not exist in the model.")
         return self.model.kv.most_similar(node_id, topn=topn)
+
+    def to_hyperboloid(self, model_path: Optional[str] = None) -> np.ndarray:
+        """Convert Poincaré embeddings to hyperboloid coordinates."""
+        poincare_embeddings = self.get_all_embeddings(model_path)
+        return poincare_to_hyperboloid(poincare_embeddings)
+
+    def to_poincare(self, model_path: Optional[str] = None) -> np.ndarray:
+        """Return embeddings in Poincaré coordinates (already in Poincaré space)."""
+        return self.get_all_embeddings(model_path)

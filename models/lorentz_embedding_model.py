@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from models.base_hyperbolic_model import BaseHyperbolicModel
 from models.lorentz.lorentz import RSGD, Graph, Lorentz, recon
+from utils.geometric_conversions import hyperboloid_to_poincare
 
 # Enable logging for gensim
 logging.basicConfig(format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO)
@@ -24,7 +25,7 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
         self.epochs = config.get("epochs", 1000)
         self.batch_size = config.get("batch_size", 1)
         self.sample_size = config.get("sample_size", 5)
-        self.learning_rate = config.get("learning_rate", 0.1)
+        self.learning_rate = config.get("learning_rate", 0.5)
         self.burn_epochs = config.get("burn_epochs", 10)
         self.burn_c = config.get("burn_c", 10)
         self.loader_workers = config.get("loader_workers", 2)
@@ -33,6 +34,12 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
         self.shuffle = config.get("shuffle", True)
         self.model = None
         self.num_nodes = config.get("num_nodes", None)
+        self.node_lookup = None  # Will be set during training
+
+    @property
+    def native_space(self) -> str:
+        """Get the native embedding space for this model."""
+        return "hyperboloid"
 
     def train(
         self,
@@ -57,7 +64,7 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
                 adjacency_matrix[id_to_index[str(u)], id_to_index[str(v)]] = 1
 
         self.num_nodes = adjacency_matrix.shape[0]
-        self.model = Lorentz(n_items=self.num_nodes, dim=self.dim)
+        self.model = Lorentz(n_items=self.num_nodes, dim=self.dim + 1)  # Lorentz space is (n+1)-dimensional
         dataset = Graph(adjacency_matrix, sample_size=self.sample_size)
         dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=self.shuffle, num_workers=self.loader_workers)
 
@@ -99,14 +106,107 @@ class LorentzEmbeddingsModel(BaseHyperbolicModel):
             self.model = Lorentz(n_items=self.num_nodes, dim=self.dim + 1)
             self.model.load_state_dict(torch.load(model_path))
 
-        node_index = int(node_id) + 1  # +1 due to padding idx
-        return self.model.get_lorentz_table()[node_index]
+        # Handle node ID lookup if we have a lookup table
+        if self.node_lookup is not None:
+            # Find the index for this node_id
+            node_index = None
+            for idx, stored_node_id in self.node_lookup.items():
+                if stored_node_id == node_id:
+                    node_index = idx
+                    break
+            if node_index is None:
+                raise ValueError(f"Node ID '{node_id}' not found in the trained model")
+        else:
+            # Fallback to assuming node_id is already an integer index
+            node_index = int(node_id)
+
+        # +1 due to padding idx (index 0 is reserved for padding)
+        lorentz_embedding = self.model.get_lorentz_table()[node_index + 1]
+        # Return embedding in reordered format (standard hyperboloid format)
+        return self._reorder_lorentz_coordinates(lorentz_embedding.reshape(1, -1))[0]
 
     def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
         if model_path:
             self.model = Lorentz(n_items=self.num_nodes, dim=self.dim + 1)
             self.model.load_state_dict(torch.load(model_path))
-        return self.model.get_lorentz_table()
+
+        # Get all embeddings except the padding (index 0)
+        lorentz_table = self.model.get_lorentz_table()
+        lorentz_embeddings = lorentz_table[1:]  # Skip padding index
+
+        # Return embeddings in reordered format (standard hyperboloid format)
+        return self._reorder_lorentz_coordinates(lorentz_embeddings)
+
+    def _reorder_lorentz_coordinates(self, lorentz_coords: np.ndarray) -> np.ndarray:
+        """
+        Reorder Lorentz coordinates from (time, spatial) to (spatial, time) format.
+
+        The Lorentz model uses the first coordinate as time, but the standard hyperboloid
+        model uses the last coordinate as time. This function reorders the coordinates.
+
+        Parameters:
+        - lorentz_coords: Coordinates in Lorentz format (time first)
+
+        Returns:
+        - hyperboloid_coords: Coordinates in standard hyperboloid format (time last)
+        """
+        if lorentz_coords.shape[1] < 2:
+            return lorentz_coords
+
+        # Reorder: [time, x1, x2, ...] -> [x1, x2, ..., time]
+        time_coord = lorentz_coords[:, 0:1]  # Keep as column vector
+        spatial_coords = lorentz_coords[:, 1:]
+        return np.concatenate([spatial_coords, time_coord], axis=1)
 
     def most_similar(self, node_id: str, topn: int = 5, model_path: Optional[str] = None) -> List[Tuple[str, float]]:
-        pass
+        """
+        Find the most similar nodes to a given node using Lorentz distance.
+
+        Parameters:
+        - node_id: String identifier of the query node
+        - topn: Number of most similar nodes to return
+        - model_path: Optional path to load the model from
+
+        Returns:
+        - List of (node_id, similarity_score) tuples, ordered by similarity (highest first)
+        """
+        if model_path:
+            self.model = Lorentz(n_items=self.num_nodes, dim=self.dim + 1)
+            self.model.load_state_dict(torch.load(model_path))
+
+        # Get the query node embedding (already in reordered format)
+        query_embedding = self.get_embedding(node_id, model_path)
+
+        # Get all embeddings (already in reordered format)
+        all_embeddings = self.get_all_embeddings(model_path)
+
+        # Calculate Lorentz distances (negative Lorentz scalar product)
+        similarities = []
+        for i, embedding in enumerate(all_embeddings):
+            # Lorentz scalar product: <x,y> = x₁y₁ + ... + xₙyₙ - x₀y₀ (time coordinate last)
+            # Distance is -<x,y> (negative because we want similarity, not distance)
+            spatial_product = np.sum(query_embedding[:-1] * embedding[:-1])
+            time_product = query_embedding[-1] * embedding[-1]
+            lorentz_product = spatial_product - time_product
+            similarity = -lorentz_product  # Negative for similarity
+
+            # Get the actual node ID
+            if self.node_lookup is not None:
+                actual_node_id = self.node_lookup.get(i, str(i))
+            else:
+                actual_node_id = str(i)
+
+            similarities.append((actual_node_id, float(similarity)))
+
+        # Sort by similarity (highest first) and return topn
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        return similarities[:topn]
+
+    def to_hyperboloid(self, model_path: Optional[str] = None) -> np.ndarray:
+        """Return embeddings in hyperboloid coordinates (already in standard format)."""
+        return self.get_all_embeddings(model_path)
+
+    def to_poincare(self, model_path: Optional[str] = None) -> np.ndarray:
+        """Convert hyperboloid embeddings to Poincaré coordinates."""
+        hyperboloid_embeddings = self.get_all_embeddings(model_path)
+        return hyperboloid_to_poincare(hyperboloid_embeddings)

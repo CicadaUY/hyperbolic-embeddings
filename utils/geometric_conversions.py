@@ -339,6 +339,26 @@ class HyperbolicConversions:
 
         return x
 
+    @staticmethod
+    def spherical_to_poincare(spherical: np.ndarray) -> np.ndarray:
+        """
+        Convert coordinates from spherical coordinates to the N-dimensional Poincaré ball model.
+        Uses hyperboloid as an intermediate space.
+
+        Parameters:
+        - spherical: Spherical coordinates (r, θ_1, ..., θ_{n-1})
+
+        Returns:
+        - y: Coordinates in the N-dimensional Poincaré ball model (R^N)
+        """
+        # Convert spherical to hyperboloid first
+        hyperboloid_coords = HyperbolicConversions.spherical_to_hyperboloid(spherical)
+
+        # Then convert hyperboloid to Poincaré
+        poincare_coords = HyperbolicConversions.hyperboloid_to_poincare(hyperboloid_coords)
+
+        return poincare_coords
+
     @classmethod
     def convert_coordinates(cls, embeddings: np.ndarray, from_space: str, to_space: str) -> np.ndarray:
         """
@@ -593,3 +613,8 @@ def hyperboloid_to_spherical(x: np.ndarray) -> np.ndarray:
 def spherical_to_hyperboloid(spherical: np.ndarray) -> np.ndarray:
     """Convert from spherical to hyperboloid coordinates."""
     return HyperbolicConversions.spherical_to_hyperboloid(spherical)
+
+
+def spherical_to_poincare(spherical: np.ndarray) -> np.ndarray:
+    """Convert from spherical to Poincaré coordinates."""
+    return HyperbolicConversions.spherical_to_poincare(spherical)

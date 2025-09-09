@@ -10,9 +10,9 @@ from math import acosh, pi, sqrt
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.linalg import eigh
-from scipy.optimize import minimize_scalar, minimize
 from numpy.random import default_rng
+from scipy.linalg import eigh
+from scipy.optimize import minimize, minimize_scalar
 
 
 def hydra(D, dim=2, curvature=1, alpha=1.1, equi_adj=0.5, control=None):
@@ -364,8 +364,21 @@ def outer_hyper_line(x0, aux, dist, t):
     """
     return np.outer(np.cosh(t * dist), x0) + np.outer(np.sinh(t * dist), aux)
 
-def hydra_plus(D, dim=2, curvature=1.0, alpha=1.1, equi_adj=0.5, control=None,
-               curvature_bias=1.0, curvature_freeze=True, curvature_max=None, maxit=1000, seed=None, **kwargs):
+
+def hydra_plus(
+    D,
+    dim=2,
+    curvature=1.0,
+    alpha=1.1,
+    equi_adj=0.5,
+    control=None,
+    curvature_bias=1.0,
+    curvature_freeze=True,
+    curvature_max=None,
+    maxit=1000,
+    seed=None,
+    **kwargs
+):
     """
     Hydra+ with optional curvature optimization and stress minimization.
 
@@ -395,7 +408,7 @@ def hydra_plus(D, dim=2, curvature=1.0, alpha=1.1, equi_adj=0.5, control=None,
     control["polar"] = False
     h_embed = hydra(D, dim=dim, curvature=curvature, alpha=alpha, equi_adj=equi_adj, control=control)
 
-    # Step 2: Convert to hyperboloid coordinates and add jitter
+    # Step 2: Convert spherical to hyperboloidcoordinates and add jitter
     X0 = poincare_to_hyper(h_embed["r"], h_embed["directional"])
     x0 = X0.flatten()
     x0 += rng.normal(0, 1e-4, size=x0.shape)
@@ -421,8 +434,9 @@ def hydra_plus(D, dim=2, curvature=1.0, alpha=1.1, equi_adj=0.5, control=None,
         return stress_gradient(x, n, dim, D, curvature=None if not curvature_freeze else curvature_bias * h_embed["curvature"])
 
     # Step 6: Run optimization
-    result = minimize(objective, x0, jac=gradient, method='L-BFGS-B', bounds=list(zip(lower, upper)),
-                      options={'maxiter': maxit, 'disp': True}, **kwargs)
+    result = minimize(
+        objective, x0, jac=gradient, method="L-BFGS-B", bounds=list(zip(lower, upper)), options={"maxiter": maxit, "disp": True}, **kwargs
+    )
 
     # Step 7: Convert back to Poincaré coordinates
     if not curvature_freeze:
@@ -432,13 +446,16 @@ def hydra_plus(D, dim=2, curvature=1.0, alpha=1.1, equi_adj=0.5, control=None,
         curv_opt = h_embed["curvature"]
         coords = result.x.reshape(n, dim)
 
+    print(coords.shape)
+
     poincare = hyper_to_poincare(coords)
     poincare["curvature"] = curv_opt
     poincare["curvature_max"] = curvature_max
     poincare["convergence_code"] = result.status
     poincare["stress"] = get_stress(poincare["r"], poincare["directional"], curv_opt, D)
 
-    return poincare
+    return coords
+
 
 def stress_objective(x, nrows, ncols, dist, curvature=None):
     if curvature is None:

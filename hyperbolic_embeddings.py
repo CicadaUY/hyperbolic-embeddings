@@ -182,7 +182,7 @@ class HyperbolicEmbeddings:
     def plot_embeddings(
         self,
         embeddings: np.ndarray,
-        input_space: str = "hyperboloid",
+        embedding_space: str = "hyperboloid",
         output_space: str = "poincare",
         labels: Optional[List[str]] = None,
         edge_list: Optional[List[Tuple]] = None,
@@ -197,12 +197,12 @@ class HyperbolicEmbeddings:
         colormap: str = "tab10",
     ):
         """
-        Plot embeddings in different hyperbolic spaces.
+        Plot embeddings in Poincaré or spherical spaces.
 
         Parameters:
         - embeddings: Numpy array of embeddings (N x D)
-        - input_space: Space of input embeddings
-        - output_space: Space to plot in
+        - embedding_space: Space of the embeddings return by the method
+        - output_space: Space to plot in ("poincare" or "spherical")
         - labels: Optional list of labels for coloring points
         - edge_list: Optional list of edges to draw connections
         - save_path: Optional path to save the plot
@@ -216,19 +216,22 @@ class HyperbolicEmbeddings:
         - colormap: Matplotlib colormap name
         """
         # Input validation
-        if input_space.lower() not in self.SUPPORTED_SPACES:
-            logger.error(f"Invalid input_space: {input_space}. Must be one of {self.SUPPORTED_SPACES}")
+        if embedding_space.lower() not in self.SUPPORTED_SPACES:
+            logger.error(f"Invalid input_space: {embedding_space}. Must be one of {self.SUPPORTED_SPACES}")
             raise ValueError(f"input_space must be one of {self.SUPPORTED_SPACES}")
-        if output_space.lower() not in self.SUPPORTED_SPACES:
-            logger.error(f"Invalid output_space: {output_space}. Must be one of {self.SUPPORTED_SPACES}")
-            raise ValueError(f"output_space must be one of {self.SUPPORTED_SPACES}")
+
+        # Only allow poincare and spherical as output spaces
+        allowed_output_spaces = ["poincare", "spherical"]
+        if output_space.lower() not in allowed_output_spaces:
+            logger.error(f"Invalid output_space: {output_space}. Must be one of {allowed_output_spaces}")
+            raise ValueError(f"output_space must be one of {allowed_output_spaces}")
 
         if embeddings.shape[1] > 2:
             logger.info(f"Embedding dimension is {embeddings.shape[1]}; plotting only the first 2 dimensions.")
 
         # Convert coordinates
-        logger.info(f"Converting embeddings for plotting: {input_space} → {output_space}")
-        plot_embeddings = self.convert_coordinates(embeddings, input_space, output_space)
+        logger.info(f"Converting embeddings for plotting: {embedding_space} → {output_space}")
+        plot_embeddings = self.convert_coordinates(embeddings, embedding_space, output_space)
 
         # Validate embeddings
         self.validate_embeddings(plot_embeddings, output_space)
@@ -238,7 +241,7 @@ class HyperbolicEmbeddings:
         # Create figure
         logger.debug(f"Creating plot with figsize: {figsize}")
         fig, ax = plt.subplots(figsize=figsize)
-        ax.set_title(f"Hyperbolic Embeddings: {input_space.capitalize()} → {output_space.capitalize()}")
+        ax.set_title(f"Hyperbolic Embeddings: {embedding_space.capitalize()} → {output_space.capitalize()}")
 
         # Plot edges
         if edge_list:
@@ -278,16 +281,13 @@ class HyperbolicEmbeddings:
             ax.add_artist(plt.Circle((0, 0), 1, fill=False, color="black", linestyle="--"))
             ax.set_xlim(-1.1, 1.1)
             ax.set_ylim(-1.1, 1.1)
-        elif output_space.lower() == "klein":
-            # Draw Klein disk boundary
-            ax.add_artist(plt.Circle((0, 0), 1, fill=False, color="black", linestyle="--"))
-            ax.set_xlim(-1.1, 1.1)
-            ax.set_ylim(-1.1, 1.1)
-        else:  # hyperboloid or hemisphere
-            # Set reasonable limits
-            margin = 1
-            ax.set_xlim(x.min() - margin, x.max() + margin)
-            ax.set_ylim(y.min() - margin, y.max() + margin)
+        elif output_space.lower() == "spherical":
+            # Draw spherical boundary with radius > max distance from origin
+            max_radius = np.sqrt(np.max(x**2 + y**2))
+            boundary_radius = max_radius * 1.1  # 10% margin
+            ax.add_artist(plt.Circle((0, 0), boundary_radius, fill=False, color="black", linestyle="--"))
+            ax.set_xlim(-boundary_radius * 1.1, boundary_radius * 1.1)
+            ax.set_ylim(-boundary_radius * 1.1, boundary_radius * 1.1)
 
         ax.set_aspect("equal")
         ax.axis("off")

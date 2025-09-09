@@ -6,7 +6,7 @@ import numpy as np
 
 from models.base_hyperbolic_model import BaseHyperbolicModel
 from models.hydra.hydra import hydra
-from utils.geometric_conversions import spherical_to_hyperboloid
+from utils.geometric_conversions import convert_coordinates
 
 
 class HydraModel(BaseHyperbolicModel):
@@ -15,6 +15,11 @@ class HydraModel(BaseHyperbolicModel):
         self.curvature = config.get("curvature", 1)
         self.alpha = config.get("alpha", 1.1)
         self.equi_adj = config.get("equi_adj", 0.5)
+
+    @property
+    def native_space(self) -> str:
+        """Get the native embedding space for this model."""
+        return "spherical"
 
     def train(
         self,
@@ -49,25 +54,6 @@ class HydraModel(BaseHyperbolicModel):
         with open(model_path, "wb") as f:
             pickle.dump(self.embeddings, f)
 
-    def spherical_to_hyperboloid_coordinates(self, theta: np.ndarray, radius: np.ndarray) -> np.ndarray:
-        """
-        Convert spherical coordinates (theta, radius) to hyperboloid coordinates.
-
-        Parameters:
-        - theta: Angular coordinates
-        - radius: Radial coordinates (distance from origin)
-
-        Returns:
-        - Hyperboloid coordinates (x, y, t)
-        """
-
-        spherical_coords = np.column_stack([radius, theta])
-
-        # Convert to hyperboloid coordinates
-        hyperboloid_coords = spherical_to_hyperboloid(spherical_coords)
-
-        return hyperboloid_coords
-
     def get_all_embeddings(self, model_path: Optional[str] = None) -> np.ndarray:
         if model_path:
             with open(model_path, "rb") as f:
@@ -75,7 +61,9 @@ class HydraModel(BaseHyperbolicModel):
 
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
-        _embeddings = self.spherical_to_hyperboloid_coordinates(theta, radius)
+
+        # Return spherical coordinates as [radius, theta]
+        _embeddings = np.column_stack([radius, theta])
 
         return _embeddings
 
@@ -85,3 +73,25 @@ class HydraModel(BaseHyperbolicModel):
 
     def most_similar(self, node_id: str, topn: int = 5, model_path: Optional[str] = None) -> List[Tuple[str, float]]:
         pass
+
+    def to_hyperboloid(self, model_path: Optional[str] = None) -> np.ndarray:
+        """Convert spherical embeddings to hyperboloid coordinates."""
+        if model_path:
+            with open(model_path, "rb") as f:
+                self.embeddings = pickle.load(f)
+
+        theta = self.embeddings["theta"]
+        radius = self.embeddings["r"]
+        spherical_coords = np.column_stack([radius, theta])
+        return convert_coordinates(spherical_coords, "spherical", "hyperboloid")
+
+    def to_poincare(self, model_path: Optional[str] = None) -> np.ndarray:
+        """Convert spherical embeddings to Poincaré coordinates."""
+        if model_path:
+            with open(model_path, "rb") as f:
+                self.embeddings = pickle.load(f)
+
+        theta = self.embeddings["theta"]
+        radius = self.embeddings["r"]
+        spherical_coords = np.column_stack([radius, theta])
+        return convert_coordinates(spherical_coords, "spherical", "poincare")
