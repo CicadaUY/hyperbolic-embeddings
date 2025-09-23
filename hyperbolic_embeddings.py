@@ -230,8 +230,11 @@ class HyperbolicEmbeddings:
             logger.info(f"Embedding dimension is {embeddings.shape[1]}; plotting only the first 2 dimensions.")
 
         # Convert coordinates
-        logger.info(f"Converting embeddings for plotting: {embedding_space} → {output_space}")
-        plot_embeddings = self.convert_coordinates(embeddings, embedding_space, output_space)
+        if embedding_space != output_space:
+            logger.info(f"Converting embeddings for plotting: {embedding_space} → {output_space}")
+            plot_embeddings = self.convert_coordinates(embeddings, embedding_space, output_space)
+        else:
+            plot_embeddings = embeddings
 
         # Validate embeddings
         self.validate_embeddings(plot_embeddings, output_space)
@@ -243,54 +246,82 @@ class HyperbolicEmbeddings:
         fig, ax = plt.subplots(figsize=figsize)
         ax.set_title(f"Hyperbolic Embeddings: {embedding_space.capitalize()} → {output_space.capitalize()}")
 
-        # Plot edges
-        if edge_list:
-            logger.debug(f"Plotting {len(edge_list)} edges")
-            for u, v in edge_list:
-                if u < len(x) and v < len(x):  # Check bounds
-                    p1 = (x[u], y[u])
-                    p2 = (x[v], y[v])
-                    if plot_geodesic and output_space.lower() == "poincare":
-                        self.plot_geodesic_arc(p1, p2, ax)
-                    else:
-                        ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color="gray", linewidth=edge_width, alpha=edge_alpha, zorder=1)
-
-        # Plot points with labels
-        if labels:
-            labels = np.array(labels)
-            unique_labels = sorted(set(labels))
-            cmap = cm.get_cmap(colormap, len(unique_labels))
-            label_to_color = {label: cmap(i) for i, label in enumerate(unique_labels)}
-
-            for label in unique_labels:
-                indices = np.where(labels == label)[0]
-                ax.scatter(x[indices], y[indices], s=point_size, edgecolor="black", color=label_to_color[label], label=label, zorder=2)
-
-            ax.legend(loc="upper right", fontsize=8, frameon=True)
-        else:
-            ax.scatter(x, y, s=point_size, edgecolor="black", color="skyblue", zorder=2)
-
-        # Add node labels
-        if show_node_labels:
-            for i in range(len(x)):
-                ax.text(x[i], y[i], str(i), fontsize=node_label_size, ha="center", va="center", zorder=3)
-
-        # Draw appropriate boundary
         if output_space.lower() == "poincare":
+            # Plot edges
+            if edge_list:
+                logger.debug(f"Plotting {len(edge_list)} edges")
+                for u, v in edge_list:
+                    if u < len(x) and v < len(x):  # Check bounds
+                        p1 = (x[u], y[u])
+                        p2 = (x[v], y[v])
+                        if plot_geodesic and output_space.lower() == "poincare":
+                            self.plot_geodesic_arc(p1, p2, ax)
+                        else:
+                            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color="gray", linewidth=edge_width, alpha=edge_alpha, zorder=1)
+
+            # Plot points with labels
+            if labels:
+                labels = np.array(labels)
+                unique_labels = sorted(set(labels))
+                cmap = cm.get_cmap(colormap, len(unique_labels))
+                label_to_color = {label: cmap(i) for i, label in enumerate(unique_labels)}
+
+                for label in unique_labels:
+                    indices = np.where(labels == label)[0]
+                    ax.scatter(x[indices], y[indices], s=point_size, edgecolor="black", color=label_to_color[label], label=label, zorder=2)
+                    ax.legend(loc="upper right", fontsize=8, frameon=True)
+            else:
+                ax.scatter(x, y, s=point_size, edgecolor="black", color="skyblue", zorder=2)
+
+            # Add node labels
+            if show_node_labels:
+                for i in range(len(x)):
+                    ax.text(x[i], y[i], str(i), fontsize=node_label_size, ha="center", va="center", zorder=3)
+
             # Draw Poincaré disk boundary
             ax.add_artist(plt.Circle((0, 0), 1, fill=False, color="black", linestyle="--"))
             ax.set_xlim(-1.1, 1.1)
             ax.set_ylim(-1.1, 1.1)
-        elif output_space.lower() == "spherical":
-            # Draw spherical boundary with radius > max distance from origin
-            max_radius = np.sqrt(np.max(x**2 + y**2))
-            boundary_radius = max_radius * 1.1  # 10% margin
-            ax.add_artist(plt.Circle((0, 0), boundary_radius, fill=False, color="black", linestyle="--"))
-            ax.set_xlim(-boundary_radius * 1.1, boundary_radius * 1.1)
-            ax.set_ylim(-boundary_radius * 1.1, boundary_radius * 1.1)
+            ax.set_aspect("equal")
+            ax.axis("off")
 
-        ax.set_aspect("equal")
-        ax.axis("off")
+        elif output_space.lower() == "spherical":
+            ax = plt.subplot(111, projection="polar")
+
+            # Plot edges
+            if edge_list:
+                logger.debug(f"Plotting {len(edge_list)} edges")
+                for u, v in edge_list:
+                    if u < len(x) and v < len(x):  # Check bounds
+                        p1 = (y[u], x[u])
+                        p2 = (y[v], x[v])
+                        ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color="gray", linewidth=edge_width, alpha=edge_alpha, zorder=1)
+
+            # Plot points with labels
+            if labels:
+                labels = np.array(labels)
+                unique_labels = sorted(set(labels))
+                cmap = cm.get_cmap(colormap, len(unique_labels))
+                label_to_color = {label: cmap(i) for i, label in enumerate(unique_labels)}
+
+                for label in unique_labels:
+                    indices = np.where(labels == label)[0]
+                    ax.scatter(y[indices], x[indices], s=point_size, edgecolor="black", color=label_to_color[label], label=label, zorder=2)
+                    ax.legend(loc="upper right", fontsize=8, frameon=True)
+            else:
+                ax.scatter(y, x, s=point_size, edgecolor="black", color="skyblue", zorder=2)
+
+            # Add node labels
+            if show_node_labels:
+                for i in range(len(x)):
+                    ax.text(y[i], x[i], str(i), fontsize=node_label_size, ha="center", va="center", zorder=3)
+
+            # Draw spherical boundary with radius > max distance from origin
+            max_radius = np.max(x)
+            boundary_radius = max_radius * 1.1  # 10% margin
+            ax.set_ylim(0, boundary_radius)  # or
+            ax.set_rlim(0, boundary_radius)
+            ax.set_aspect("equal")
 
         if save_path:
             logger.info(f"Saving plot to: {save_path}")
