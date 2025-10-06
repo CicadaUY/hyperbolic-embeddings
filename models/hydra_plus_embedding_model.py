@@ -24,7 +24,7 @@ class HydraPlusModel(BaseHyperbolicModel):
     @property
     def native_space(self) -> str:
         """Get the native embedding space for this model."""
-        return "hyperboloid"
+        return "spherical"
 
     def train(
         self,
@@ -80,8 +80,10 @@ class HydraPlusModel(BaseHyperbolicModel):
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
 
-        # Return spherical coordinates as [radius, theta]
-        _embeddings = np.column_stack([radius, theta])
+        # Return poincare coordinates as [x, y]
+        x = radius * np.cos(theta)
+        y = radius * np.sin(theta)
+        _embeddings = np.stack((x, y), axis=1)
 
         return _embeddings
 
@@ -100,8 +102,11 @@ class HydraPlusModel(BaseHyperbolicModel):
 
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
-        spherical_coords = np.column_stack([radius, theta])
-        return convert_coordinates(spherical_coords, "spherical", "hyperboloid")
+        x = radius * np.cos(theta)
+        y = radius * np.sin(theta)
+        _embeddings = np.stack((x, y), axis=1)
+
+        return convert_coordinates(_embeddings, "poincare", "hyperboloid")
 
     def to_poincare(self, model_path: Optional[str] = None) -> np.ndarray:
         """Convert spherical embeddings to Poincaré coordinates."""
@@ -111,5 +116,7 @@ class HydraPlusModel(BaseHyperbolicModel):
 
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
-        spherical_coords = np.column_stack([radius, theta])
-        return convert_coordinates(spherical_coords, "spherical", "poincare")
+        x = radius * np.cos(theta)
+        y = radius * np.sin(theta)
+        _embeddings = np.stack((x, y), axis=1)
+        return _embeddings

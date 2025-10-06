@@ -454,7 +454,7 @@ def hydra_plus(
     poincare["convergence_code"] = result.status
     poincare["stress"] = get_stress(poincare["r"], poincare["directional"], curv_opt, D)
 
-    return coords
+    return poincare
 
 
 def stress_objective(x, nrows, ncols, dist, curvature=None):

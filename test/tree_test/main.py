@@ -65,7 +65,7 @@ def main():
     print(f"Training {embedding_type} embeddings...")
     embedding_runner = HyperbolicEmbeddings(embedding_type=embedding_type, config=config)
 
-    if embedding_type == "hydra" or embedding_type == "poincare_maps" or embedding_type == "lorentz":
+    if embedding_type == "hydra" or embedding_type == "poincare_maps" or embedding_type == "lorentz" or embedding_type == "hydra_plus":
         embedding_runner.train(adjacency_matrix=A, model_path=model_path)
     else:
         embedding_runner.train(edge_list=edge_list, model_path=model_path)
