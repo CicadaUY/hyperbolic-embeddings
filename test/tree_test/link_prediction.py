@@ -1,13 +1,4 @@
-#!/usr/bin/env python3
-"""
-Example script demonstrating the link prediction pipeline.
-
-This script shows how to use the HyperbolicEmbeddings class
-to perform link prediction on a test tree graph.
-"""
-
 import argparse
-import os
 import random
 from typing import Dict, List, Tuple
 
@@ -147,8 +138,8 @@ def evaluate_predictions(predicted_links: list, omega_R: list, omega_N: list) ->
     true_negatives = sum(1 for pair in omega_N if pair not in predicted_pairs)
 
     accuracy = (true_positives + true_negatives) / (true_positives + false_positives + false_negatives + true_negatives)
-    precision = true_positives / (true_positives + false_positives)
-    recall = true_positives / (true_positives + false_negatives)
+    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
     f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 
     metrics = {
@@ -163,6 +154,62 @@ def evaluate_predictions(predicted_links: list, omega_R: list, omega_N: list) ->
     }
 
     return metrics
+
+
+def plot_embeddings(
+    poincare_embeddings: np.ndarray,
+    embedding_runner: HyperbolicEmbeddings,
+    edges: list,
+    true_positives: list,
+    false_positives: list,
+    plot_title: str,
+    save_path: str,
+):
+
+    # Embeddings with predictions (in Poincaré disk)
+    x, y = poincare_embeddings[:, 0], poincare_embeddings[:, 1]
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.set_title(plot_title)
+
+    # Plot omega_E edges
+    for u, v in edges:
+        if u < len(x) and v < len(x):
+            p1 = (x[u], y[u])
+            p2 = (x[v], y[v])
+
+            embedding_runner.plot_geodesic_arc(p1, p2, ax)
+
+    # Plot recovered links
+    for u, v, _ in true_positives:
+        if u < len(x) and v < len(x):
+            p1 = (x[u], y[u])
+            p2 = (x[v], y[v])
+
+            embedding_runner.plot_geodesic_arc(p1, p2, ax, color="green", linestyle="solid", linewidth=2)
+
+    # Plot false positives
+    for u, v, _ in false_positives:
+        if u < len(x) and v < len(x):
+            p1 = (x[u], y[u])
+            p2 = (x[v], y[v])
+
+            embedding_runner.plot_geodesic_arc(p1, p2, ax, color="red", linestyle="solid", linewidth=2)
+
+    ax.scatter(x, y, s=150, edgecolor="black", color="skyblue", zorder=2)
+
+    for i in range(len(x)):
+        ax.text(x[i], y[i], str(i), fontsize=10, ha="center", va="center", zorder=3)
+
+    # Draw Poincaré disk boundary
+    ax.add_artist(plt.Circle((0, 0), 1, fill=False, color="black", linestyle="--"))
+    ax.set_xlim(-1.1, 1.1)
+    ax.set_ylim(-1.1, 1.1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.show()
 
 
 def parse_args():
@@ -184,6 +231,7 @@ def parse_args():
 def main():
     """Run a simple example of the link prediction pipeline."""
     args = parse_args()
+    PATH = f"test/tree_test/plots/link_prediction/"
 
     print("Link Prediction Pipeline Example")
     print("=" * 40)
@@ -192,8 +240,89 @@ def main():
 
     # Create a test tree graph
     print("Creating test tree graph...")
-    graph = create_test_tree_graph(branching_factor=2, depth=6)
+    graph = create_test_tree_graph(branching_factor=2, depth=4)
     print(f"Graph created: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
+
+    # Train hyperbolic embeddings
+    print("Training hyperbolic embeddings for original graph...")
+    configurations = {
+        "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
+        "lorentz": {"dim": 2, "epochs": 10000, "batch_size": 1024, "num_nodes": len(graph.nodes)},
+        "dmercator": {"dim": 1},
+        "hydra": {"dim": 2},
+        "poincare_maps": {"dim": 2, "epochs": 1000},
+        "hypermap": {"dim": 3},
+        "hydra_plus": {"dim": 2},
+    }
+    config = configurations[args.embedding_type]
+    embedding_runner = HyperbolicEmbeddings(embedding_type=args.embedding_type, config=config)
+
+    # Prepare training data
+    adjacency_matrix = nx.to_numpy_array(graph)
+
+    # Train the model
+    model_path = f"saved_models/tree_test/link_prediction/{args.embedding_type}_original_graph_model.bin"
+    embedding_runner.train(adjacency_matrix=adjacency_matrix, model_path=model_path)
+
+    # Get embeddings
+    original_graph_embeddings = embedding_runner.get_all_embeddings(model_path)
+    print(f"Embeddings shape: {original_graph_embeddings.shape}")
+
+    native_space = embedding_runner.model.native_space
+
+    # Convert embeddings to Poincaré for better visualization
+    if native_space != "poincare":
+        original_graph_poincare_embeddings = convert_coordinates(original_graph_embeddings, native_space, "poincare")
+    else:
+        original_graph_poincare_embeddings = original_graph_embeddings
+
+    plot_title = "Original Graph Embeddings in Poincaré Disk"
+    save_path = f"{PATH}/{args.embedding_type}_original_graph_embeddings.pdf"
+    plot_embeddings(original_graph_poincare_embeddings, embedding_runner, graph.edges(), [], [], plot_title, save_path)
+
+    # Generating graph from Distance Matrix
+    print("Generating graph from distance matrix...")
+
+    # Convert to hyperboloid coordinates if needed
+    if native_space != "hyperboloid":
+        print(f"Converting embeddings from {native_space} to hyperboloid coordinates")
+        orginal_graph_hyperboloid_embeddings = convert_coordinates(original_graph_embeddings, native_space, "hyperboloid")
+    else:
+        orginal_graph_hyperboloid_embeddings = original_graph_embeddings
+
+    orginal_graph_distance_matrix = compute_distances(orginal_graph_hyperboloid_embeddings, space="hyperboloid")
+
+    distance_matrix_predicted_links = predict_links(orginal_graph_distance_matrix, n_links=len(graph.edges()))
+
+    print(f"Distance matrix predicted links: {distance_matrix_predicted_links}")
+
+    # Analyze predictions: recovered links vs false positives
+    recovered_links = []  # Correctly predicted removed links (from Ω_R)
+    false_positives = []  # Incorrectly predicted non-links (from Ω_N)
+    true_edges_set = set(graph.edges())
+    true_edges_set.update([(v, u) for u, v in graph.edges()])  # Add both directions
+
+    for u, v, dist in distance_matrix_predicted_links:
+        if (u, v) in true_edges_set:
+            recovered_links.append((u, v, dist))
+        else:
+            false_positives.append((u, v, dist))
+
+    print("\nCreating visualization...")
+
+    # Convert embeddings to Poincaré for better visualization
+    if native_space != "poincare":
+        original_graph_poincare_embeddings = convert_coordinates(orginal_graph_hyperboloid_embeddings, "hyperboloid", "poincare")
+    else:
+        original_graph_poincare_embeddings = original_graph_embeddings
+
+    plot_title = "Distance Matrix Predicted Links in Poincaré Disk"
+    save_path = f"{PATH}/{args.embedding_type}_distance_matrix_predicted_links.pdf"
+    plot_embeddings(
+        original_graph_poincare_embeddings, embedding_runner, graph.edges(), recovered_links, false_positives, plot_title, save_path
+    )
+
+    ########################################################################################################################################################
 
     # Simulate link removal
     print("Simulating link removal...")
@@ -231,6 +360,16 @@ def main():
     # Get embeddings
     embeddings = embedding_runner.get_all_embeddings(model_path)
     print(f"Embeddings shape: {embeddings.shape}")
+
+    # Convert embeddings to Poincaré for better visualization
+    if native_space != "poincare":
+        poincare_embeddings = convert_coordinates(embeddings, native_space, "poincare")
+    else:
+        poincare_embeddings = embeddings
+
+    plot_title = "Distance Matrix Predicted Links in Poincaré Disk"
+    save_path = f"{PATH}/{args.embedding_type}_omega_E_graph_embeddings.pdf"
+    plot_embeddings(poincare_embeddings, embedding_runner, graph.edges(), [], [], plot_title, save_path)
 
     # Convert to hyperboloid coordinates if needed
     native_space = embedding_runner.model.native_space
@@ -305,122 +444,13 @@ def main():
 
     # Convert embeddings to Poincaré for better visualization
     if native_space != "poincare":
-        poincare_embeddings = convert_coordinates(embeddings, "hyperboloid", "poincare")
+        poincare_embeddings = convert_coordinates(hyperboloid_embeddings, "hyperboloid", "poincare")
     else:
         poincare_embeddings = embeddings
 
-    # Create a comparison plot
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-
-    # Original graph
-    pos = nx.spring_layout(graph)
-    nx.draw(graph, pos, ax=axes[0], with_labels=True, node_color="lightblue", node_size=500, font_size=10, font_weight="bold")
-    axes[0].set_title("Original Graph")
-
-    # Embeddings with predictions (in Poincaré disk)
-    x, y = poincare_embeddings[:, 0], poincare_embeddings[:, 1]
-    axes[1].scatter(x, y, s=100, alpha=0.7, c=range(len(x)), cmap="viridis")
-
-    # Add node labels
-    for i, (xi, yi) in enumerate(zip(x, y)):
-        axes[1].annotate(str(i), (xi, yi), xytext=(5, 5), textcoords="offset points", fontsize=8)
-
-    # Plot original edges in gray
-    for u, v in graph.edges():
-        if u < len(x) and v < len(x):
-            axes[1].plot([x[u], x[v]], [y[u], y[v]], "gray", alpha=0.3, linewidth=0.5)
-
-    # Create sets for faster lookup
-    all_edges = list(graph.edges())
-    all_edges_set = set(all_edges)
-    all_edges_set.update([(v, u) for u, v in all_edges])  # Add both directions
-
-    # Highlight predicted links - green if correct, red if incorrect
-    pred_edges = [(u, v) for u, v, _ in predicted_links]
-    for u, v in pred_edges:
-        if u < len(x) and v < len(x):
-            # Check if this predicted link actually exists in the original graph
-            if (u, v) in all_edges_set:
-                # Correct prediction - green dashed
-                axes[1].plot([x[u], x[v]], [y[u], y[v]], "green", alpha=0.8, linewidth=2)
-            else:
-                # Incorrect prediction - red dashed
-                axes[1].plot([x[u], x[v]], [y[u], y[v]], "red", alpha=0.8, linewidth=2)
-
-    # Draw Poincaré disk boundary
-    circle = plt.Circle((0, 0), 1, fill=False, color="black", linestyle="--", alpha=0.5)
-    axes[1].add_patch(circle)
-    axes[1].set_xlim(-1.1, 1.1)
-    axes[1].set_ylim(-1.1, 1.1)
-    axes[1].set_aspect("equal")
-
-    axes[1].set_title("Hyperbolic Embeddings (Poincaré Disk) and Link Predictions")
-    axes[1].set_xlabel("X (first spatial coordinate)")
-    axes[1].set_ylabel("Y (second spatial coordinate)")
-    axes[1].grid(True, alpha=0.3)
-
-    # Add legend - only for predictions since original edges are self-explanatory
-
-    legend_elements = [
-        Line2D([0], [0], color="green", linewidth=2, label="Correct predictions"),
-        Line2D([0], [0], color="red", linewidth=2, label="Incorrect predictions"),
-    ]
-    axes[1].legend(handles=legend_elements)
-
-    plt.tight_layout()
-    plt.savefig(f"test/tree_test/plots/{args.embedding_type}_link_prediction_comparison.pdf", dpi=300, bbox_inches="tight")
-    plt.show()
-
-    # Also create a separate embedding plot
-    plt.figure(figsize=(10, 10))
-    plt.scatter(x, y, s=100, alpha=0.7, c=range(len(x)), cmap="viridis")
-
-    # Add node labels
-    for i, (xi, yi) in enumerate(zip(x, y)):
-        plt.annotate(str(i), (xi, yi), xytext=(5, 5), textcoords="offset points", fontsize=8)
-
-    # Plot original edges in gray
-    for u, v in graph.edges():
-        if u < len(x) and v < len(x):
-            plt.plot([x[u], x[v]], [y[u], y[v]], "gray", alpha=0.3, linewidth=0.5)
-
-    # Create sets for faster lookup
-    all_edges = list(graph.edges())
-    all_edges_set = set(graph.edges())
-    all_edges_set.update([(v, u) for u, v in all_edges])  # Add both directions
-
-    # Highlight predicted links - green if correct, red if incorrect
-    for u, v in pred_edges:
-        if u < len(x) and v < len(x):
-            # Check if this predicted link actually exists in the original graph
-            if (u, v) in all_edges_set:
-                # Correct prediction - green solid
-                plt.plot([x[u], x[v]], [y[u], y[v]], "green", alpha=0.8, linewidth=2)
-            else:
-                # Incorrect prediction - red solid
-                plt.plot([x[u], x[v]], [y[u], y[v]], "red", alpha=0.8, linewidth=2)
-
-    # Draw Poincaré disk boundary
-    circle = plt.Circle((0, 0), 1, fill=False, color="black", linestyle="--", alpha=0.5)
-    plt.gca().add_patch(circle)
-    plt.xlim(-1.1, 1.1)
-    plt.ylim(-1.1, 1.1)
-    plt.gca().set_aspect("equal")
-
-    plt.title("Hyperbolic Embeddings and Link Predictions")
-    plt.xlabel("X (first spatial coordinate)")
-    plt.ylabel("Y (second spatial coordinate)")
-    plt.grid(True, alpha=0.3)
-    # Add legend - only for predictions since original edges are self-explanatory
-
-    legend_elements = [
-        Line2D([0], [0], color="green", linewidth=2, label="Correct predictions"),
-        Line2D([0], [0], color="red", linewidth=2, label="Incorrect predictions"),
-    ]
-    plt.legend(handles=legend_elements)
-
-    plt.savefig(f"test/tree_test/plots/{args.embedding_type}_link_prediction_embeddings.pdf", dpi=300, bbox_inches="tight")
-    plt.show()
+    plot_title = "Predicted Links in Poincaré Disk"
+    save_path = f"{PATH}/{args.embedding_type}_omege_E_predicted_links.pdf"
+    plot_embeddings(poincare_embeddings, embedding_runner, graph.edges(), recovered_links, false_positives, plot_title, save_path)
 
     print("\nPipeline completed successfully!")
 

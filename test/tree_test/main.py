@@ -17,7 +17,7 @@ def main():
         help="Type of embedding model to use.",
     )
     parser.add_argument("--model_dir", type=str, default="saved_models/tree_test", help="Directory to save the trained model.")
-    parser.add_argument("--plot_dir", type=str, default="test/tree_test/plots", help="Directory to save the plots.")
+    parser.add_argument("--plot_dir", type=str, default="test/tree_test/plots/embeddings", help="Directory to save the plots.")
     parser.add_argument(
         "--output_space",
         type=str,

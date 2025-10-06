@@ -147,7 +147,7 @@ class HyperbolicEmbeddings:
         except ValueError as e:
             logger.error(f"Validation failed for {space} space: {e}")
 
-    def plot_geodesic_arc(self, p1, p2, ax):
+    def plot_geodesic_arc(self, p1, p2, ax, linewidth: float = 0.5, alpha: float = 0.6, color: str = "gray", linestyle: str = "--"):
         """
         Plot a hyperbolic geodesic between p1 and p2 on the Poincaré disk.
         """
@@ -155,7 +155,7 @@ class HyperbolicEmbeddings:
 
         # Check if it's a straight line through origin
         if np.isclose(np.cross(p1, p2), 0):
-            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], "b-", linewidth=0.5, alpha=0.6)
+            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], linewidth=linewidth, alpha=alpha, linestyle=linestyle, color=color)
             return
 
         denom = np.imag(np.conj(z1) * z2 - z1 * np.conj(z2))
@@ -177,7 +177,7 @@ class HyperbolicEmbeddings:
 
         angles = np.linspace(theta1, theta2, 100)
         arc = center + radius * np.exp(1j * angles)
-        ax.plot(arc.real, arc.imag, "gray", linewidth=0.5, alpha=0.6, linestyle="--")
+        ax.plot(arc.real, arc.imag, linewidth=linewidth, alpha=alpha, linestyle=linestyle, color=color)
 
     def plot_embeddings(
         self,
@@ -187,6 +187,7 @@ class HyperbolicEmbeddings:
         labels: Optional[List[str]] = None,
         edge_list: Optional[List[Tuple]] = None,
         save_path: Optional[str] = None,
+        plot_title: Optional[str] = None,
         plot_geodesic: bool = True,
         figsize: Tuple[int, int] = (10, 10),
         point_size: int = 100,
@@ -244,7 +245,10 @@ class HyperbolicEmbeddings:
         # Create figure
         logger.debug(f"Creating plot with figsize: {figsize}")
         fig, ax = plt.subplots(figsize=figsize)
-        ax.set_title(f"Hyperbolic Embeddings: {embedding_space.capitalize()} → {output_space.capitalize()}")
+        if plot_title:
+            ax.set_title(plot_title)
+        else:
+            ax.set_title(f"Hyperbolic Embeddings: {embedding_space.capitalize()} → {output_space.capitalize()}")
 
         if output_space.lower() == "poincare":
             # Plot edges
