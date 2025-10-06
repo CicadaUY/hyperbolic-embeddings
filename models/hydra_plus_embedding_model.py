@@ -79,11 +79,14 @@ class HydraPlusModel(BaseHyperbolicModel):
 
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
+        r = np.arctanh(radius) * 2
 
         # Return poincare coordinates as [x, y]
-        x = radius * np.cos(theta)
-        y = radius * np.sin(theta)
-        _embeddings = np.stack((x, y), axis=1)
+        # x = radius * np.cos(theta)
+        # y = radius * np.sin(theta)
+        # _embeddings = np.stack((x, y), axis=1)
+
+        _embeddings = np.column_stack([r, theta])
 
         return _embeddings
 
@@ -102,11 +105,13 @@ class HydraPlusModel(BaseHyperbolicModel):
 
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
-        x = radius * np.cos(theta)
-        y = radius * np.sin(theta)
-        _embeddings = np.stack((x, y), axis=1)
-
-        return convert_coordinates(_embeddings, "poincare", "hyperboloid")
+        # x = radius * np.cos(theta)
+        # y = radius * np.sin(theta)
+        # _embeddings = np.stack((x, y), axis=1)
+        # return convert_coordinates(_embeddings, "poincare", "hyperboloid")
+        r = np.arctanh(radius) * 2
+        spherical_coords = np.column_stack([r, theta])
+        return convert_coordinates(spherical_coords, "spherical", "hyperboloid")
 
     def to_poincare(self, model_path: Optional[str] = None) -> np.ndarray:
         """Convert spherical embeddings to Poincaré coordinates."""
@@ -116,7 +121,10 @@ class HydraPlusModel(BaseHyperbolicModel):
 
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
-        x = radius * np.cos(theta)
-        y = radius * np.sin(theta)
-        _embeddings = np.stack((x, y), axis=1)
-        return _embeddings
+        # x = radius * np.cos(theta)
+        # y = radius * np.sin(theta)
+        # _embeddings = np.stack((x, y), axis=1)
+        # return _embeddings
+        r = np.arctanh(radius) * 2
+        spherical_coords = np.column_stack([r, theta])
+        return convert_coordinates(spherical_coords, "spherical", "poincare")

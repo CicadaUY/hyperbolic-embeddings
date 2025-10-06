@@ -62,8 +62,9 @@ class HydraModel(BaseHyperbolicModel):
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
 
+        r = np.arctanh(radius) * 2
         # Return spherical coordinates as [radius, theta]
-        _embeddings = np.column_stack([radius, theta])
+        _embeddings = np.column_stack([r, theta])
 
         return _embeddings
 
@@ -82,7 +83,9 @@ class HydraModel(BaseHyperbolicModel):
 
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
-        spherical_coords = np.column_stack([radius, theta])
+        r = np.arctanh(radius) * 2
+
+        spherical_coords = np.column_stack([r, theta])
         return convert_coordinates(spherical_coords, "spherical", "hyperboloid")
 
     def to_poincare(self, model_path: Optional[str] = None) -> np.ndarray:
@@ -93,5 +96,7 @@ class HydraModel(BaseHyperbolicModel):
 
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
-        spherical_coords = np.column_stack([radius, theta])
+        r = np.arctanh(radius) * 2
+
+        spherical_coords = np.column_stack([r, theta])
         return convert_coordinates(spherical_coords, "spherical", "poincare")
