@@ -9,37 +9,37 @@ all: env clone-repos install setup
 env:
 	python -m venv $(VENV_DIR)
 
-# Clone required repositories if they don't exist
+# Clone required repositories, overwriting if they exist
 clone-repos:
 	@echo "Checking and cloning required repositories..."
 	@mkdir -p $(MODELS_DIR)
-	@if [ ! -d "$(MODELS_DIR)/d-mercator" ]; then \
-		echo "Cloning d-mercator..."; \
-		cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/d-mercator.git; \
-	else \
-		echo "d-mercator already exists, skipping..."; \
+	@if [ -d "$(MODELS_DIR)/d-mercator" ]; then \
+		echo "Removing existing d-mercator..."; \
+		rm -rf $(MODELS_DIR)/d-mercator; \
 	fi
-	@if [ ! -d "$(MODELS_DIR)/hypermap" ]; then \
-		echo "Cloning hypermap..."; \
-		cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/hypermap.git; \
-	else \
-		echo "hypermap already exists, skipping..."; \
+	@echo "Cloning d-mercator..."; \
+	cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/d-mercator.git
+	@if [ -d "$(MODELS_DIR)/hypermap" ]; then \
+		echo "Removing existing hypermap..."; \
+		rm -rf $(MODELS_DIR)/hypermap; \
 	fi
-	@if [ ! -d "$(MODELS_DIR)/lorentz" ]; then \
-		echo "Cloning lorentz-embeddings..."; \
-		cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/lorentz-embeddings.git; \
-		mv $(MODELS_DIR)/lorentz-embeddings $(MODELS_DIR)/lorentz; \
-		rm -rf $(MODELS_DIR)/lorentz-embeddings; \
-	else \
-		echo "lorentz-embeddings already exists, skipping..."; \
+	@echo "Cloning hypermap..."; \
+	cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/hypermap.git
+	@if [ -d "$(MODELS_DIR)/lorentz" ]; then \
+		echo "Removing existing lorentz..."; \
+		rm -rf $(MODELS_DIR)/lorentz; \
 	fi
-	@if [ ! -d "$(MODELS_DIR)/PoincareMaps" ]; then \
-		echo "Cloning PoincareMaps..."; \
-		cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/PoincareMaps.git; \
-	else \
-		echo "PoincareMaps already exists, skipping..."; \
+	@echo "Cloning lorentz-embeddings..."; \
+	cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/lorentz-embeddings.git; \
+	mv $(MODELS_DIR)/lorentz-embeddings $(MODELS_DIR)/lorentz; \
+	rm -rf $(MODELS_DIR)/lorentz-embeddings
+	@if [ -d "$(MODELS_DIR)/PoincareMaps" ]; then \
+		echo "Removing existing PoincareMaps..."; \
+		rm -rf $(MODELS_DIR)/PoincareMaps; \
 	fi
-	@echo "Repository check complete!"
+	@echo "Cloning PoincareMaps..."; \
+	cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/PoincareMaps.git
+	@echo "Repository cloning complete!"
 
 # Activate env and install dependencies
 install: 
