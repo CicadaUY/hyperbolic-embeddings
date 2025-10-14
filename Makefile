@@ -35,7 +35,7 @@ clone-repos:
 	fi
 	@echo "Cloning lorentz-embeddings..."; \
 	cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/lorentz-embeddings.git; \
-	mv $(MODELS_DIR)/lorentz-embeddings $(MODELS_DIR)/lorentz; \
+	mv lorentz-embeddings lorentz; \
 	rm -rf $(MODELS_DIR)/lorentz-embeddings
 	@if [ -d "$(MODELS_DIR)/PoincareMaps" ]; then \
 		echo "Removing existing PoincareMaps..."; \
