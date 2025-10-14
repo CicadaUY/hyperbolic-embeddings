@@ -17,26 +17,26 @@ Supported models include:
 ### Requirements:
 
 - Python 3.9+ is required
-
-### Clone required repositories
-
-``` 
-cd models/
-git clone https://github.com/CicadaUY/d-mercator.git
-git clone https://github.com/CicadaUY/hypermap.git
-git clone https://github.com/CicadaUY/lorentz-embeddings.git
-```
+- Git (for cloning repositories)
 
 ### Build and install dependencies 
 
-```
+```bash
 make
 ```
-This will:
 
-- Create a virtual environment (venv)
-- Install required dependencies
-- Set up local packages like d-mercator and hypermap
+This will automatically:
+
+1. Create a virtual environment (venv)
+2. Clone required repositories (if not already present):
+   - d-mercator
+   - hypermap
+   - lorentz-embeddings
+   - PoincareMaps
+3. Install required dependencies
+4. Set up local packages like d-mercator and hypermap
+
+**Note:** If you've already cloned the repositories manually, the Makefile will detect them and skip the cloning step.
 
 ## Usage
 

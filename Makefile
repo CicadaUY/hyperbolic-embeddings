@@ -1,12 +1,45 @@
 VENV_DIR := venv
+MODELS_DIR := models
 
-.PHONY: all env install setup clean
+.PHONY: all env install clone-repos setup clean
 
-all: env install setup
+all: env clone-repos install setup
 
 # Create virtual environment
 env:
 	python -m venv $(VENV_DIR)
+
+# Clone required repositories if they don't exist
+clone-repos:
+	@echo "Checking and cloning required repositories..."
+	@mkdir -p $(MODELS_DIR)
+	@if [ ! -d "$(MODELS_DIR)/d-mercator" ]; then \
+		echo "Cloning d-mercator..."; \
+		cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/d-mercator.git; \
+	else \
+		echo "d-mercator already exists, skipping..."; \
+	fi
+	@if [ ! -d "$(MODELS_DIR)/hypermap" ]; then \
+		echo "Cloning hypermap..."; \
+		cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/hypermap.git; \
+	else \
+		echo "hypermap already exists, skipping..."; \
+	fi
+	@if [ ! -d "$(MODELS_DIR)/lorentz" ]; then \
+		echo "Cloning lorentz-embeddings..."; \
+		cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/lorentz-embeddings.git; \
+		mv $(MODELS_DIR)/lorentz-embeddings $(MODELS_DIR)/lorentz; \
+		rm -rf $(MODELS_DIR)/lorentz-embeddings; \
+	else \
+		echo "lorentz-embeddings already exists, skipping..."; \
+	fi
+	@if [ ! -d "$(MODELS_DIR)/PoincareMaps" ]; then \
+		echo "Cloning PoincareMaps..."; \
+		cd $(MODELS_DIR) && git clone https://github.com/CicadaUY/PoincareMaps.git; \
+	else \
+		echo "PoincareMaps already exists, skipping..."; \
+	fi
+	@echo "Repository check complete!"
 
 # Activate env and install dependencies
 install: 

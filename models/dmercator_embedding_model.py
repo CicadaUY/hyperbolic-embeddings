@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import dmercator
@@ -25,6 +26,7 @@ class DMercatorModel(BaseHyperbolicModel):
         features: Optional[np.ndarray] = None,
         model_path: str = "saved_models/model.bin",
     ):
+        Path(self._edge_file).parent.mkdir(parents=True, exist_ok=True)
         if edge_list is not None:
             with open(self._edge_file, "w") as f:
                 for u, v in edge_list:

@@ -231,7 +231,7 @@ def parse_args():
 def main():
     """Run a simple example of the link prediction pipeline."""
     args = parse_args()
-    PATH = f"test/tree_test/plots/link_prediction/"
+    PATH = f"test/karate_club/plots/link_prediction/"
 
     print("Link Prediction Pipeline Example")
     print("=" * 40)
@@ -242,6 +242,9 @@ def main():
     print("Creating test tree graph...")
     graph = create_test_tree_graph(branching_factor=2, depth=4)
     print(f"Graph created: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
+
+    # Load Karate Club graph
+    graph = nx.karate_club_graph()
 
     # Train hyperbolic embeddings
     print("Training hyperbolic embeddings for original graph...")
@@ -261,7 +264,7 @@ def main():
     adjacency_matrix = nx.to_numpy_array(graph)
 
     # Train the model
-    model_path = f"saved_models/tree_test/link_prediction/{args.embedding_type}_original_graph_model.bin"
+    model_path = f"saved_models/karate_club/link_prediction/{args.embedding_type}_original_graph_model.bin"
     embedding_runner.train(adjacency_matrix=adjacency_matrix, model_path=model_path)
 
     # Get embeddings
