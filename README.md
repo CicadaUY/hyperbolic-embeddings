@@ -40,6 +40,12 @@ This will automatically:
 
 ## Usage
 
+### Activate virtual env
+
+```
+source venv/bin/activate
+```
+
 ### Initialize Embedding Manager
 
 ```
@@ -63,6 +69,7 @@ embedding_manager.plot_embeddings(labels=labels, edge_list=edge_list, save_path=
 
 
 ### Tree Test
+
 ```
 python -m test.tree_test.main --embedding_type='hypermap' --output_space='poincare'
 ```
