@@ -1,0 +1,39 @@
+Link Prediction Results
+==================================================
+
+Experiment Parameters:
+-------------------------
+Dataset: ToggleSwitch
+Embedding Type: dmercator
+Link Removal Probability (1-q): 0.10
+Link Retention Probability (q): 0.90
+Number of Links to Predict: Same as removed links
+
+Graph Information:
+--------------------
+Original Graph Nodes: 200
+Original Graph Edges: 1896
+Remaining Edges (Ω_E): 1701
+Removed Edges (Ω_R): 195
+True Non-links (Ω_N): 18004
+Candidate Links (Ω_R + Ω_N): 18199
+
+Performance Metrics:
+--------------------
+Accuracy: 0.9905
+Precision: 0.5590
+Recall: 0.5590
+F1-Score: 0.5590
+
+Confusion Matrix:
+-----------------
+True Positives: 109
+False Positives: 86
+False Negatives: 86
+True Negatives: 17918
+
+Additional Analysis:
+--------------------
+Total Predictions Made: 18199
+Percentage of Removed Links Recovered: 55.90%
+Percentage of Predictions that were Correct: 0.60%

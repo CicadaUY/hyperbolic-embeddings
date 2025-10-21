@@ -1,0 +1,39 @@
+Link Prediction Results
+==================================================
+
+Experiment Parameters:
+-------------------------
+Dataset: ToggleSwitch
+Embedding Type: hydra
+Link Removal Probability (1-q): 0.10
+Link Retention Probability (q): 0.90
+Number of Links to Predict: Same as removed links
+
+Graph Information:
+--------------------
+Original Graph Nodes: 200
+Original Graph Edges: 1896
+Remaining Edges (Ω_E): 1711
+Removed Edges (Ω_R): 185
+True Non-links (Ω_N): 18004
+Candidate Links (Ω_R + Ω_N): 18189
+
+Performance Metrics:
+--------------------
+Accuracy: 0.9815
+Precision: 0.0919
+Recall: 0.0919
+F1-Score: 0.0919
+
+Confusion Matrix:
+-----------------
+True Positives: 17
+False Positives: 168
+False Negatives: 168
+True Negatives: 17836
+
+Additional Analysis:
+--------------------
+Total Predictions Made: 18189
+Percentage of Removed Links Recovered: 9.19%
+Percentage of Predictions that were Correct: 0.09%

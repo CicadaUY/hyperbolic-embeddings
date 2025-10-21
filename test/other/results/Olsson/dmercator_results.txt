@@ -1,0 +1,39 @@
+Link Prediction Results
+==================================================
+
+Experiment Parameters:
+-------------------------
+Dataset: Olsson
+Embedding Type: dmercator
+Link Removal Probability (1-q): 0.10
+Link Retention Probability (q): 0.90
+Number of Links to Predict: Same as removed links
+
+Graph Information:
+--------------------
+Original Graph Nodes: 382
+Original Graph Edges: 4214
+Remaining Edges (Ω_E): 3804
+Removed Edges (Ω_R): 410
+True Non-links (Ω_N): 68557
+Candidate Links (Ω_R + Ω_N): 68967
+
+Performance Metrics:
+--------------------
+Accuracy: 0.9895
+Precision: 0.1171
+Recall: 0.1171
+F1-Score: 0.1171
+
+Confusion Matrix:
+-----------------
+True Positives: 48
+False Positives: 362
+False Negatives: 362
+True Negatives: 68195
+
+Additional Analysis:
+--------------------
+Total Predictions Made: 68967
+Percentage of Removed Links Recovered: 11.71%
+Percentage of Predictions that were Correct: 0.07%
