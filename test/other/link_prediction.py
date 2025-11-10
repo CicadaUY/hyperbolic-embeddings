@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 
+from as_dataset_loader import ASDatasetLoader
 from hyperbolic_embeddings import HyperbolicEmbeddings
 from poincare_maps_networkx_loader import PoincareMapsLoader
 from utils.geometric_conversions import compute_distances, convert_coordinates
@@ -157,6 +158,185 @@ def evaluate_predictions(predicted_links: list, omega_R: list, omega_N: list) ->
     return metrics
 
 
+def compute_lift_curve(all_candidates_with_distances: list, omega_R: list) -> dict:
+    """
+    Compute lift curve analysis by dividing candidates into deciles.
+
+    Args:
+        all_candidates_with_distances: List of (u, v, distance) tuples
+        omega_R: List of true removed links (u, v) tuples
+
+    Returns:
+        Dictionary containing decile statistics
+    """
+    # Convert omega_R to set for faster lookup
+    omega_R_set = set(omega_R)
+    omega_R_set.update([(v, u) for u, v in omega_R])  # Add both directions
+
+    # Sort candidates by distance (ascending - closest first)
+    sorted_candidates = sorted(all_candidates_with_distances, key=lambda x: x[2])
+
+    total_candidates = len(sorted_candidates)
+    decile_size = total_candidates // 10
+
+    # Calculate overall baseline TP rate
+    total_true_positives = sum(1 for u, v, _ in sorted_candidates if (u, v) in omega_R_set)
+    baseline_tp_rate = total_true_positives / total_candidates if total_candidates > 0 else 0
+
+    decile_stats = []
+    cumulative_tps = 0
+
+    for decile in range(10):
+        start_idx = decile * decile_size
+        if decile == 9:  # Last decile gets remaining candidates
+            end_idx = total_candidates
+        else:
+            end_idx = (decile + 1) * decile_size
+
+        decile_candidates = sorted_candidates[start_idx:end_idx]
+        decile_count = len(decile_candidates)
+
+        # Count true positives in this decile
+        decile_tps = sum(1 for u, v, _ in decile_candidates if (u, v) in omega_R_set)
+        cumulative_tps += decile_tps
+
+        # Calculate rates
+        decile_tp_rate = decile_tps / decile_count if decile_count > 0 else 0
+        cumulative_tp_rate = cumulative_tps / (end_idx) if end_idx > 0 else 0
+        lift = decile_tp_rate / baseline_tp_rate if baseline_tp_rate > 0 else 0
+
+        decile_stats.append(
+            {
+                "decile": decile + 1,
+                "count": decile_count,
+                "true_positives": decile_tps,
+                "tp_rate": decile_tp_rate,
+                "cumulative_tps": cumulative_tps,
+                "cumulative_tp_rate": cumulative_tp_rate,
+                "lift": lift,
+            }
+        )
+
+    return {
+        "decile_stats": decile_stats,
+        "total_candidates": total_candidates,
+        "total_true_positives": total_true_positives,
+        "baseline_tp_rate": baseline_tp_rate,
+    }
+
+
+def plot_lift_curve(lift_data: dict, args, save_path: str):
+    """
+    Create lift curve visualization with bar chart and cumulative curve.
+
+    Args:
+        lift_data: Dictionary from compute_lift_curve()
+        args: Command line arguments
+        save_path: Path to save the plot
+    """
+    decile_stats = lift_data["decile_stats"]
+    baseline_tp_rate = lift_data["baseline_tp_rate"]
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+    # Top plot: Bar chart of true positives per decile
+    deciles = [d["decile"] for d in decile_stats]
+    tps = [d["true_positives"] for d in decile_stats]
+    counts = [d["count"] for d in decile_stats]
+
+    bars = ax1.bar(deciles, tps, alpha=0.7, color="skyblue", edgecolor="black")
+    ax1.set_xlabel("Decile")
+    ax1.set_ylabel("True Positives")
+    ax1.set_title(f"True Positives per Decile - {args.embedding_type} " f"({args.dataset})")
+    ax1.set_xticks(deciles)
+    ax1.grid(True, alpha=0.3)
+
+    # Add count labels on bars
+    for bar, count in zip(bars, counts):
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width() / 2.0, height + 0.1, f"n={count}", ha="center", va="bottom", fontsize=8)
+
+    # Bottom plot: Cumulative lift curve
+    cumulative_tp_rates = [d["cumulative_tp_rate"] for d in decile_stats]
+    lifts = [d["lift"] for d in decile_stats]
+
+    ax2.plot(deciles, cumulative_tp_rates, "o-", linewidth=2, markersize=6, label="Cumulative TP Rate", color="blue")
+    ax2.axhline(y=baseline_tp_rate, color="red", linestyle="--", label=f"Baseline TP Rate ({baseline_tp_rate:.4f})")
+
+    ax2.set_xlabel("Decile")
+    ax2.set_ylabel("Cumulative True Positive Rate")
+    ax2.set_title("Cumulative Lift Curve")
+    ax2.set_xticks(deciles)
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+
+    # Add lift values as text annotations
+    for i, (decile, lift) in enumerate(zip(deciles, lifts)):
+        ax2.text(decile, cumulative_tp_rates[i] + 0.01, f"Lift: {lift:.2f}", ha="center", va="bottom", fontsize=8, rotation=45)
+
+    plt.tight_layout()
+
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.show()
+
+
+def save_lift_table(lift_data: dict, args, save_path: str):
+    """
+    Save lift curve analysis as a detailed text table.
+
+    Args:
+        lift_data: Dictionary from compute_lift_curve()
+        args: Command line arguments
+        save_path: Path to save the table
+    """
+    decile_stats = lift_data["decile_stats"]
+    total_candidates = lift_data["total_candidates"]
+    total_true_positives = lift_data["total_true_positives"]
+    baseline_tp_rate = lift_data["baseline_tp_rate"]
+
+    with open(save_path, "w") as f:
+        f.write("Lift Curve Analysis\n")
+        f.write("=" * 50 + "\n\n")
+
+        # Summary information
+        f.write("Summary:\n")
+        f.write("-" * 10 + "\n")
+        f.write(f"Dataset: {args.dataset}\n")
+        f.write(f"Embedding Type: {args.embedding_type}\n")
+        f.write(f"Total Candidates: {total_candidates}\n")
+        f.write(f"Total True Positives: {total_true_positives}\n")
+        f.write(f"Baseline TP Rate: {baseline_tp_rate:.4f}\n\n")
+
+        # Detailed table
+        f.write("Decile Analysis:\n")
+        f.write("-" * 15 + "\n")
+        f.write(f"{'Decile':<6} {'Count':<8} {'TPs':<6} " f"{'TP Rate':<10} {'Cum TPs':<8} " f"{'Cum TP Rate':<12} {'Lift':<8}\n")
+        f.write("-" * 70 + "\n")
+
+        for stat in decile_stats:
+            f.write(
+                f"{stat['decile']:<6} {stat['count']:<8} "
+                f"{stat['true_positives']:<6} {stat['tp_rate']:<10.4f} "
+                f"{stat['cumulative_tps']:<8} "
+                f"{stat['cumulative_tp_rate']:<12.4f} "
+                f"{stat['lift']:<8.2f}\n"
+            )
+
+        f.write("\n")
+
+        # Interpretation
+        f.write("Interpretation:\n")
+        f.write("-" * 15 + "\n")
+        f.write("- Deciles are ordered by distance (ascending): " "Decile 1 = closest pairs\n")
+        f.write("- TP Rate: True positive rate within the decile\n")
+        f.write("- Cum TP Rate: Cumulative true positive rate " "up to this decile\n")
+        f.write("- Lift: Ratio of decile TP rate to baseline TP rate\n")
+        f.write("- Lift > 1.0 indicates better than random performance\n")
+
+
 def plot_embeddings(
     poincare_embeddings: np.ndarray,
     embedding_runner: HyperbolicEmbeddings,
@@ -165,16 +345,24 @@ def plot_embeddings(
     false_positives: list,
     plot_title: str,
     save_path: str,
+    max_edges_to_plot: int = 1000,  # Limit edges for large graphs
 ):
 
     # Embeddings with predictions (in Poincaré disk)
     x, y = poincare_embeddings[:, 0], poincare_embeddings[:, 1]
+    num_nodes = len(x)
 
-    fig, ax = plt.subplots(figsize=(10, 10))
+    fig, ax = plt.subplots(figsize=(12, 12))  # Larger figure for large graphs
     ax.set_title(plot_title)
 
+    # For large graphs, limit the number of edges plotted for readability
+    edges_list = list(edges)  # Convert EdgeView to list if needed
+    edges_to_plot = edges_list[:max_edges_to_plot] if len(edges_list) > max_edges_to_plot else edges_list
+    if len(edges_list) > max_edges_to_plot:
+        print(f"Plotting {max_edges_to_plot} out of {len(edges_list)} edges for better visualization")
+
     # Plot omega_E edges
-    for u, v in edges:
+    for u, v in edges_to_plot:
         if u < len(x) and v < len(x):
             p1 = (x[u], y[u])
             p2 = (x[v], y[v])
@@ -197,10 +385,17 @@ def plot_embeddings(
 
             embedding_runner.plot_geodesic_arc(p1, p2, ax, color="red", linestyle="solid", linewidth=2)
 
-    ax.scatter(x, y, s=150, edgecolor="black", color="skyblue", zorder=2)
+    # Adjust node size and labels based on graph size
+    node_size = 150 if num_nodes < 100 else (50 if num_nodes < 1000 else 10)
+    show_labels = num_nodes < 100  # Only show labels for small graphs
 
-    for i in range(len(x)):
-        ax.text(x[i], y[i], str(i), fontsize=10, ha="center", va="center", zorder=3)
+    ax.scatter(x, y, s=node_size, edgecolor="black", color="skyblue", zorder=2, alpha=0.7)
+
+    if show_labels:
+        for i in range(len(x)):
+            ax.text(x[i], y[i], str(i), fontsize=8, ha="center", va="center", zorder=3)
+    else:
+        print(f"Skipping node labels for large graph ({num_nodes} nodes)")
 
     # Draw Poincaré disk boundary
     ax.add_artist(plt.Circle((0, 0), 1, fill=False, color="black", linestyle="--"))
@@ -258,12 +453,11 @@ def save_metrics_to_file(metrics: dict, args, results: dict, graph_info: dict, s
         f.write(f"True Negatives: {metrics['true_negatives']}\n\n")
 
         # Additional analysis
-        total_predictions = len(results["omega_R_plus_N"]) if args.n_links is None else min(args.n_links, len(results["omega_R_plus_N"]))
+        total_predictions = len(results["omega_R"]) if args.n_links is None else args.n_links
         f.write("Additional Analysis:\n")
         f.write("-" * 20 + "\n")
         f.write(f"Total Predictions Made: {total_predictions}\n")
         f.write(f"Percentage of Removed Links Recovered: {(metrics['true_positives'] / len(results['omega_R']) * 100):.2f}%\n")
-        f.write(f"Percentage of Predictions that were Correct: {(metrics['true_positives'] / total_predictions * 100):.2f}%\n")
 
 
 def parse_args():
@@ -276,9 +470,17 @@ def parse_args():
         choices=["poincare_embeddings", "lorentz", "poincare_maps", "dmercator", "hydra", "hypermap", "hydra_plus"],
         help="Type of hyperbolic embedding to use",
     )
-    parser.add_argument("--n_links", type=int, default=None, help="Number of links to predict (default: same as number of edges in graph)")
+    parser.add_argument(
+        "--n_links", type=int, default=None, help="Number of links to predict (default: same as number of removed edges in graph)"
+    )
     parser.add_argument("--q", type=float, default=0.5, help="Probability of keeping a link (default: 0.5)")
-    parser.add_argument("--dataset", type=str, default="ToggleSwitch", help="Dataset to use (default: ToggleSwitch)")
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="ToggleSwitch",
+        choices=["ToggleSwitch", "AS", "Olsson", "MyeloidProgenitors", "krumsiek11_blobs", "Paul"],
+        help="Dataset to use: ToggleSwitch (PoincareMaps) or AS (Stanford SNAP Autonomous Systems)",
+    )
 
     return parser.parse_args()
 
@@ -300,23 +502,47 @@ def main():
     print(f"Results directory: {RESULTS_PATH}")
     print()
 
-    loader = PoincareMapsLoader("models/PoincareMaps/datasets/")
-    graph, metadata = loader.load_as_networkx(args.dataset, k_neighbors=15)
+    # Load dataset based on type
+    if args.dataset == "AS":
+        print("Loading Stanford SNAP AS dataset...")
+        as_loader = ASDatasetLoader()
+        graph, metadata = as_loader.load_as_networkx()
+    else:
+        print(f"Loading PoincareMaps dataset: {args.dataset}")
+        loader = PoincareMapsLoader("models/PoincareMaps/datasets/")
+        graph, metadata = loader.load_as_networkx(args.dataset, k_neighbors=15)
 
     # Store original graph information for results file
     graph_info = {"original_nodes": len(graph.nodes()), "original_edges": len(graph.edges())}
 
     # Train hyperbolic embeddings
     print("Training hyperbolic embeddings for original graph...")
-    configurations = {
-        "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
-        "lorentz": {"dim": 2, "epochs": 10000, "batch_size": 1024, "num_nodes": len(graph.nodes)},
-        "dmercator": {"dim": 1},
-        "hydra": {"dim": 2},
-        "poincare_maps": {"dim": 2, "epochs": 1000},
-        "hypermap": {"dim": 3},
-        "hydra_plus": {"dim": 2},
-    }
+
+    # Adjust configurations based on dataset size
+    num_nodes = len(graph.nodes())
+    is_large_dataset = num_nodes > 1000  # AS dataset has 6474 nodes
+
+    if is_large_dataset:
+        print(f"Large dataset detected ({num_nodes} nodes), adjusting parameters...")
+        configurations = {
+            "poincare_embeddings": {"dim": 2, "negs": 10, "epochs": 500, "batch_size": 512, "dimension": 1},
+            "lorentz": {"dim": 2, "epochs": 5000, "batch_size": 2048, "num_nodes": num_nodes},
+            "dmercator": {"dim": 2},  # Increase dimension for larger graphs
+            "hydra": {"dim": 3},  # Increase dimension for larger graphs
+            "poincare_maps": {"dim": 2, "epochs": 500},
+            "hypermap": {"dim": 3},
+            "hydra_plus": {"dim": 3},  # Increase dimension for larger graphs
+        }
+    else:
+        configurations = {
+            "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
+            "lorentz": {"dim": 2, "epochs": 10000, "batch_size": 1024, "num_nodes": num_nodes},
+            "dmercator": {"dim": 1},
+            "hydra": {"dim": 2},
+            "poincare_maps": {"dim": 2, "epochs": 1000},
+            "hypermap": {"dim": 3},
+            "hydra_plus": {"dim": 2},
+        }
     config = configurations[args.embedding_type]
     embedding_runner = HyperbolicEmbeddings(embedding_type=args.embedding_type, config=config)
 
@@ -324,7 +550,7 @@ def main():
     adjacency_matrix = nx.to_numpy_array(graph)
 
     # Train the model
-    model_path = f"saved_models/karate_club/link_prediction/{args.embedding_type}_original_graph_model.bin"
+    model_path = f"saved_models/{args.dataset}/link_prediction/{args.embedding_type}_original_graph_model.bin"
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     embedding_runner.train(adjacency_matrix=adjacency_matrix, model_path=model_path)
 
@@ -342,7 +568,8 @@ def main():
 
     plot_title = "Original Graph Embeddings in Poincaré Disk"
     save_path = f"{PATH}/{args.embedding_type}_original_graph_embeddings.pdf"
-    plot_embeddings(original_graph_poincare_embeddings, embedding_runner, graph.edges(), [], [], plot_title, save_path)
+    max_edges = 2000 if is_large_dataset else 1000
+    plot_embeddings(original_graph_poincare_embeddings, embedding_runner, graph.edges(), [], [], plot_title, save_path, max_edges)
 
     # Generating graph from Distance Matrix
     print("Generating graph from distance matrix...")
@@ -383,7 +610,14 @@ def main():
     plot_title = "Distance Matrix Predicted Links in Poincaré Disk"
     save_path = f"{PATH}/{args.embedding_type}_distance_matrix_predicted_links.pdf"
     plot_embeddings(
-        original_graph_poincare_embeddings, embedding_runner, graph.edges(), recovered_links, false_positives, plot_title, save_path
+        original_graph_poincare_embeddings,
+        embedding_runner,
+        graph.edges(),
+        recovered_links,
+        false_positives,
+        plot_title,
+        save_path,
+        max_edges,
     )
 
     ########################################################################################################################################################
@@ -402,15 +636,28 @@ def main():
 
     # Train hyperbolic embeddings
     print("Training hyperbolic embeddings...")
-    configurations = {
-        "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
-        "lorentz": {"dim": 2, "epochs": 10000, "batch_size": 1024, "num_nodes": len(graph.nodes)},
-        "dmercator": {"dim": 1},
-        "hydra": {"dim": 2},
-        "poincare_maps": {"dim": 2, "epochs": 1000},
-        "hypermap": {"dim": 3},
-        "hydra_plus": {"dim": 2},
-    }
+
+    # Use the same configurations as before (already adjusted for dataset size)
+    if is_large_dataset:
+        configurations = {
+            "poincare_embeddings": {"dim": 2, "negs": 10, "epochs": 500, "batch_size": 512, "dimension": 1},
+            "lorentz": {"dim": 2, "epochs": 5000, "batch_size": 2048, "num_nodes": len(graph.nodes)},
+            "dmercator": {"dim": 2},  # Increase dimension for larger graphs
+            "hydra": {"dim": 3},  # Increase dimension for larger graphs
+            "poincare_maps": {"dim": 2, "epochs": 500},
+            "hypermap": {"dim": 3},
+            "hydra_plus": {"dim": 3},  # Increase dimension for larger graphs
+        }
+    else:
+        configurations = {
+            "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
+            "lorentz": {"dim": 2, "epochs": 10000, "batch_size": 1024, "num_nodes": len(graph.nodes)},
+            "dmercator": {"dim": 1},
+            "hydra": {"dim": 2},
+            "poincare_maps": {"dim": 2, "epochs": 1000},
+            "hypermap": {"dim": 3},
+            "hydra_plus": {"dim": 2},
+        }
     config = configurations[args.embedding_type]
     embedding_runner = HyperbolicEmbeddings(embedding_type=args.embedding_type, config=config)
 
@@ -418,7 +665,7 @@ def main():
     adjacency_matrix = nx.to_numpy_array(graph_from_omega_E)
 
     # Train the model
-    model_path = f"saved_models/tree_test/link_prediction/{args.embedding_type}_model.bin"
+    model_path = f"saved_models/{args.dataset}/link_prediction/{args.embedding_type}_model.bin"
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     embedding_runner.train(adjacency_matrix=adjacency_matrix, model_path=model_path)
 
@@ -432,9 +679,9 @@ def main():
     else:
         poincare_embeddings = embeddings
 
-    plot_title = "Distance Matrix Predicted Links in Poincaré Disk"
+    plot_title = "Omega E Graph Embeddings in Poincaré Disk"
     save_path = f"{PATH}/{args.embedding_type}_omega_E_graph_embeddings.pdf"
-    plot_embeddings(poincare_embeddings, embedding_runner, omega_E, [], [], plot_title, save_path)
+    plot_embeddings(poincare_embeddings, embedding_runner, omega_E, [], [], plot_title, save_path, max_edges)
 
     # Convert to hyperboloid coordinates if needed
     native_space = embedding_runner.model.native_space
@@ -463,6 +710,36 @@ def main():
     print()
     print("Evaluating predictions...")
     metrics = evaluate_predictions(predicted_links, omega_R, omega_N)
+
+    # Perform lift curve analysis
+    print("\nPerforming lift curve analysis...")
+
+    # Collect all candidates with their distances
+    all_candidates_with_distances = []
+    for u, v in omega_R_plus_N:
+        dist = distances[u, v]
+        all_candidates_with_distances.append((u, v, dist))
+
+    # Compute lift curve statistics
+    lift_data = compute_lift_curve(all_candidates_with_distances, omega_R)
+
+    # Generate lift curve visualization
+    lift_plot_path = f"{RESULTS_PATH}/{args.embedding_type}_lift_curve.pdf"
+    plot_lift_curve(lift_data, args, lift_plot_path)
+
+    # Save detailed lift analysis table
+    lift_table_path = f"{RESULTS_PATH}/{args.embedding_type}_lift_analysis.txt"
+    save_lift_table(lift_data, args, lift_table_path)
+
+    print(f"Lift curve plot saved to: {lift_plot_path}")
+    print(f"Lift analysis table saved to: {lift_table_path}")
+
+    # Print summary of lift analysis
+    print("\nLift Curve Summary:")
+    print(f"Total candidates analyzed: {lift_data['total_candidates']}")
+    print(f"Baseline TP rate: {lift_data['baseline_tp_rate']:.4f}")
+    print(f"Top decile lift: {lift_data['decile_stats'][0]['lift']:.2f}")
+    print(f"Top 3 deciles cumulative TP rate: " f"{lift_data['decile_stats'][2]['cumulative_tp_rate']:.4f}")
 
     # Print results
     print("\nLink Prediction Results:")
@@ -519,8 +796,8 @@ def main():
         poincare_embeddings = embeddings
 
     plot_title = "Predicted Links in Poincaré Disk"
-    save_path = f"{PATH}/{args.embedding_type}_omege_E_predicted_links.pdf"
-    plot_embeddings(poincare_embeddings, embedding_runner, omega_E, recovered_links, false_positives, plot_title, save_path)
+    save_path = f"{PATH}/{args.embedding_type}_omega_E_predicted_links.pdf"
+    plot_embeddings(poincare_embeddings, embedding_runner, omega_E, recovered_links, false_positives, plot_title, save_path, max_edges)
 
     print("\nPipeline completed successfully!")
 

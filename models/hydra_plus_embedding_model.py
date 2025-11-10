@@ -75,8 +75,6 @@ class HydraPlusModel(BaseHyperbolicModel):
             with open(model_path, "rb") as f:
                 self.embeddings = pickle.load(f)
 
-        print(self.embeddings)
-
         theta = self.embeddings["theta"]
         radius = self.embeddings["r"]
         r = np.arctanh(radius) * 2

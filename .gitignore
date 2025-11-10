@@ -177,3 +177,4 @@ data/*
 saved_models/*
 tmp/*
 local/*
+*.txt
