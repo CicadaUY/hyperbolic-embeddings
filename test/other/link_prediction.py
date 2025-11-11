@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+from graspologic.embed import AdjacencySpectralEmbed
 
 from as_dataset_loader import ASDatasetLoader
 from hyperbolic_embeddings import HyperbolicEmbeddings
@@ -137,6 +138,69 @@ def predict_links(distances: np.ndarray, n_links: int = 10, candidate_edges: lis
     return predicted_links
 
 
+def predict_links_from_probabilities(
+    probabilities: np.ndarray, n_links: int = 10, candidate_edges: list = None, return_sorted_candidates: bool = False
+):
+    """
+    Predict links based on RDPG probability matrix.
+
+    Args:
+        probabilities: Probability matrix between all nodes (X @ X^T)
+        n_links: Number of links to predict
+        candidate_edges: List of candidate edge pairs to consider for prediction (e.g., Ω_R + Ω_N)
+                        If provided, only these pairs will be considered for prediction
+        return_sorted_candidates: If True, also return the sorted list of all candidates with probabilities
+
+    Returns:
+        If return_sorted_candidates is False:
+            List of predicted links as (u, v, probability) tuples, sorted by probability (highest first)
+        If return_sorted_candidates is True:
+            Tuple of (predicted_links, sorted_all_candidates) where:
+            - predicted_links: List of top n_links as (u, v, probability) tuples
+            - sorted_all_candidates: List of all candidates sorted by probability (highest first)
+    """
+
+    if candidate_edges is not None:
+        # Use specific candidate edges (e.g., Ω_R + Ω_N)
+        candidate_probs = []
+
+        for u, v in candidate_edges:
+            prob = probabilities[u, v]
+            candidate_probs.append((u, v, prob))
+
+        # Sort by probability (descending - highest first) and take the n_links with highest probabilities
+        candidate_probs.sort(key=lambda x: x[2], reverse=True)
+        predicted_links = candidate_probs[:n_links]
+
+        if return_sorted_candidates:
+            return predicted_links, candidate_probs
+        else:
+            return predicted_links
+
+    else:
+        # Original behavior: consider all possible pairs
+        # Create a copy of the probability matrix
+        prob_matrix = probabilities.copy()
+
+        # Set diagonal to negative infinity to exclude self-loops
+        np.fill_diagonal(prob_matrix, -np.inf)
+
+        # Only consider upper triangle to avoid duplicates (i < j)
+        upper_triangle_indices = np.triu_indices_from(prob_matrix, k=1)
+        upper_probs = prob_matrix[upper_triangle_indices]
+
+        # Find the N highest probabilities in upper triangle
+        sorted_indices = np.argsort(upper_probs)[::-1][:n_links]  # Reverse sort for descending
+        row_indices = upper_triangle_indices[0][sorted_indices]
+        col_indices = upper_triangle_indices[1][sorted_indices]
+        predicted_probs = upper_probs[sorted_indices]
+
+        # Create list of predicted links
+        predicted_links = [(int(row), int(col), float(prob)) for row, col, prob in zip(row_indices, col_indices, predicted_probs)]
+
+    return predicted_links
+
+
 def evaluate_predictions(predicted_links: list, omega_R: list, omega_N: list) -> dict:
     """Evaluate link prediction performance."""
 
@@ -178,14 +242,15 @@ def evaluate_predictions(predicted_links: list, omega_R: list, omega_N: list) ->
     return metrics
 
 
-def compute_lift_curve(all_candidates_with_distances: list, omega_R: list, n_bins: int = 10) -> dict:
+def compute_lift_curve(all_candidates_with_distances: list, omega_R: list, n_bins: int = 10, descending: bool = False) -> dict:
     """
     Compute lift curve analysis by dividing candidates into bins (deciles, centiles, etc.).
 
     Args:
-        all_candidates_with_distances: List of (u, v, distance) tuples
+        all_candidates_with_distances: List of (u, v, distance/probability) tuples
         omega_R: List of true removed links (u, v) tuples
         n_bins: Number of bins to divide candidates into (10 for deciles, 100 for centiles, etc.)
+        descending: If True, sort by value descending (for probabilities). If False, sort ascending (for distances).
 
     Returns:
         Dictionary containing bin statistics
@@ -194,8 +259,13 @@ def compute_lift_curve(all_candidates_with_distances: list, omega_R: list, n_bin
     omega_R_set = set(omega_R)
     omega_R_set.update([(v, u) for u, v in omega_R])  # Add both directions
 
-    # Sort candidates by distance (ascending - closest first)
-    sorted_candidates = sorted(all_candidates_with_distances, key=lambda x: x[2])
+    # Sort candidates by distance/probability
+    if descending:
+        # Sort by probability (descending - highest first)
+        sorted_candidates = sorted(all_candidates_with_distances, key=lambda x: x[2], reverse=True)
+    else:
+        # Sort by distance (ascending - closest first)
+        sorted_candidates = sorted(all_candidates_with_distances, key=lambda x: x[2])
 
     total_candidates = len(sorted_candidates)
     bin_size = total_candidates // n_bins
@@ -572,7 +642,7 @@ def parse_args():
         "--embedding_type",
         type=str,
         default="poincare_maps",
-        choices=["poincare_embeddings", "lorentz", "poincare_maps", "dmercator", "hydra", "hypermap", "hydra_plus"],
+        choices=["poincare_embeddings", "lorentz", "poincare_maps", "dmercator", "hydra", "hypermap", "hydra_plus", "rdpg"],
         help="Type of hyperbolic embedding to use",
     )
     parser.add_argument(
@@ -626,110 +696,9 @@ def main():
     # Store original graph information for results file
     graph_info = {"original_nodes": len(graph.nodes()), "original_edges": len(graph.edges())}
 
-    # Train hyperbolic embeddings
-    print("Training hyperbolic embeddings for original graph...")
-
     # Adjust configurations based on dataset size
     num_nodes = len(graph.nodes())
     is_large_dataset = num_nodes > 1000  # AS dataset has 6474 nodes
-
-    if is_large_dataset:
-        print(f"Large dataset detected ({num_nodes} nodes), adjusting parameters...")
-        configurations = {
-            "poincare_embeddings": {"dim": 2, "negs": 10, "epochs": 500, "batch_size": 512, "dimension": 1},
-            "lorentz": {"dim": 2, "epochs": 5000, "batch_size": 2048, "num_nodes": num_nodes},
-            "dmercator": {"dim": 2},  # Increase dimension for larger graphs
-            "hydra": {"dim": 3},  # Increase dimension for larger graphs
-            "poincare_maps": {"dim": 2, "epochs": 500},
-            "hypermap": {"dim": 3},
-            "hydra_plus": {"dim": 3},  # Increase dimension for larger graphs
-        }
-    else:
-        configurations = {
-            "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
-            "lorentz": {"dim": 2, "epochs": 10000, "batch_size": 1024, "num_nodes": num_nodes},
-            "dmercator": {"dim": 1},
-            "hydra": {"dim": 2},
-            "poincare_maps": {"dim": 2, "epochs": 1000},
-            "hypermap": {"dim": 3},
-            "hydra_plus": {"dim": 2},
-        }
-    config = configurations[args.embedding_type]
-    embedding_runner = HyperbolicEmbeddings(embedding_type=args.embedding_type, config=config)
-
-    # Prepare training data
-    adjacency_matrix = nx.to_numpy_array(graph)
-
-    # Train the model
-    model_path = f"saved_models/{args.dataset}/link_prediction/{args.embedding_type}_original_graph_model.bin"
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    embedding_runner.train(adjacency_matrix=adjacency_matrix, model_path=model_path)
-
-    # Get embeddings
-    original_graph_embeddings = embedding_runner.get_all_embeddings(model_path)
-    print(f"Embeddings shape: {original_graph_embeddings.shape}")
-
-    native_space = embedding_runner.model.native_space
-
-    # Convert embeddings to Poincaré for better visualization
-    if native_space != "poincare":
-        original_graph_poincare_embeddings = convert_coordinates(original_graph_embeddings, native_space, "poincare")
-    else:
-        original_graph_poincare_embeddings = original_graph_embeddings
-
-    plot_title = "Original Graph Embeddings in Poincaré Disk"
-    save_path = f"{PATH}/{args.embedding_type}_original_graph_embeddings.pdf"
-    max_edges = 2000 if is_large_dataset else 1000
-    plot_embeddings(original_graph_poincare_embeddings, embedding_runner, graph.edges(), [], [], plot_title, save_path, max_edges)
-
-    # Generating graph from Distance Matrix
-    print("Generating graph from distance matrix...")
-
-    # Convert to hyperboloid coordinates if needed
-    if native_space != "hyperboloid":
-        print(f"Converting embeddings from {native_space} to hyperboloid coordinates")
-        orginal_graph_hyperboloid_embeddings = convert_coordinates(original_graph_embeddings, native_space, "hyperboloid")
-    else:
-        orginal_graph_hyperboloid_embeddings = original_graph_embeddings
-
-    orginal_graph_distance_matrix = compute_distances(orginal_graph_hyperboloid_embeddings, space="hyperboloid")
-
-    distance_matrix_predicted_links = predict_links(orginal_graph_distance_matrix, n_links=len(graph.edges()))
-
-    # Analyze predictions: recovered links vs false positives
-    recovered_links = []  # Correctly predicted removed links (from Ω_R)
-    false_positives = []  # Incorrectly predicted non-links (from Ω_N)
-    true_edges_set = set(graph.edges())
-    true_edges_set.update([(v, u) for u, v in graph.edges()])  # Add both directions
-
-    for u, v, dist in distance_matrix_predicted_links:
-        if (u, v) in true_edges_set:
-            recovered_links.append((u, v, dist))
-        else:
-            false_positives.append((u, v, dist))
-
-    print("\nCreating visualization...")
-
-    # Convert embeddings to Poincaré for better visualization
-    if native_space != "poincare":
-        original_graph_poincare_embeddings = convert_coordinates(orginal_graph_hyperboloid_embeddings, "hyperboloid", "poincare")
-    else:
-        original_graph_poincare_embeddings = original_graph_embeddings
-
-    plot_title = "Distance Matrix Predicted Links in Poincaré Disk"
-    save_path = f"{PATH}/{args.embedding_type}_distance_matrix_predicted_links.pdf"
-    plot_embeddings(
-        original_graph_poincare_embeddings,
-        embedding_runner,
-        graph.edges(),
-        recovered_links,
-        false_positives,
-        plot_title,
-        save_path,
-        max_edges,
-    )
-
-    ########################################################################################################################################################
 
     # Simulate link removal
     print("Simulating link removal...")
@@ -743,68 +712,84 @@ def main():
 
     print(f"Graph created from omega_E: {len(graph_from_omega_E.nodes)} nodes, {len(graph_from_omega_E.edges)} edges")
 
-    # Train hyperbolic embeddings
-    print("Training hyperbolic embeddings...")
-
-    # Use the same configurations as before (already adjusted for dataset size)
-    if is_large_dataset:
-        configurations = {
-            "poincare_embeddings": {"dim": 2, "negs": 10, "epochs": 500, "batch_size": 512, "dimension": 1},
-            "lorentz": {"dim": 2, "epochs": 5000, "batch_size": 2048, "num_nodes": len(graph.nodes)},
-            "dmercator": {"dim": 2},  # Increase dimension for larger graphs
-            "hydra": {"dim": 3},  # Increase dimension for larger graphs
-            "poincare_maps": {"dim": 2, "epochs": 500},
-            "hypermap": {"dim": 3},
-            "hydra_plus": {"dim": 3},  # Increase dimension for larger graphs
-        }
+    # Train embeddings (hyperbolic or RDPG)
+    if args.embedding_type == "rdpg":
+        print("Computing RDPG embeddings...")
+        adjacency_matrix = nx.to_numpy_array(graph_from_omega_E)
+        d = 2  # Default dimension for RDPG
+        ase = AdjacencySpectralEmbed(n_components=d, diag_aug=True, algorithm="full")
+        embeddings = ase.fit_transform(adjacency_matrix)
+        print(f"RDPG embeddings shape: {embeddings.shape}")
+        native_space = "euclidean"
+        embedding_runner = None
+        poincare_embeddings = None  # Skip Poincaré visualization for RDPG
+        print("Skipping Poincaré visualization for RDPG embeddings")
     else:
-        configurations = {
-            "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
-            "lorentz": {"dim": 2, "epochs": 10000, "batch_size": 1024, "num_nodes": len(graph.nodes)},
-            "dmercator": {"dim": 1},
-            "hydra": {"dim": 2},
-            "poincare_maps": {"dim": 2, "epochs": 1000},
-            "hypermap": {"dim": 3},
-            "hydra_plus": {"dim": 2},
-        }
-    config = configurations[args.embedding_type]
-    embedding_runner = HyperbolicEmbeddings(embedding_type=args.embedding_type, config=config)
+        print("Training hyperbolic embeddings...")
+        # Use the same configurations as before (already adjusted for dataset size)
+        if is_large_dataset:
+            configurations = {
+                "poincare_embeddings": {"dim": 2, "negs": 10, "epochs": 500, "batch_size": 512, "dimension": 1},
+                "lorentz": {"dim": 2, "epochs": 5000, "batch_size": 2048, "num_nodes": len(graph.nodes)},
+                "dmercator": {"dim": 2},  # Increase dimension for larger graphs
+                "hydra": {"dim": 3},  # Increase dimension for larger graphs
+                "poincare_maps": {"dim": 2, "epochs": 500},
+                "hypermap": {"dim": 3},
+                "hydra_plus": {"dim": 3},  # Increase dimension for larger graphs
+            }
+        else:
+            configurations = {
+                "poincare_embeddings": {"dim": 2, "negs": 5, "epochs": 1000, "batch_size": 256, "dimension": 1},
+                "lorentz": {"dim": 2, "epochs": 10000, "batch_size": 1024, "num_nodes": len(graph.nodes)},
+                "dmercator": {"dim": 1},
+                "hydra": {"dim": 2},
+                "poincare_maps": {"dim": 2, "epochs": 1000},
+                "hypermap": {"dim": 3},
+                "hydra_plus": {"dim": 2},
+            }
+        config = configurations[args.embedding_type]
+        embedding_runner = HyperbolicEmbeddings(embedding_type=args.embedding_type, config=config)
+        config = configurations[args.embedding_type]
+        embedding_runner = HyperbolicEmbeddings(embedding_type=args.embedding_type, config=config)
 
-    # Prepare training data
-    adjacency_matrix = nx.to_numpy_array(graph_from_omega_E)
+        native_space = embedding_runner.model.native_space
+        max_edges = 2000 if is_large_dataset else 1000
 
-    # Train the model
-    model_path = f"saved_models/{args.dataset}/link_prediction/{args.embedding_type}_model.bin"
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    embedding_runner.train(adjacency_matrix=adjacency_matrix, model_path=model_path)
+        # Prepare training data
+        adjacency_matrix = nx.to_numpy_array(graph_from_omega_E)
 
-    # Get embeddings
-    embeddings = embedding_runner.get_all_embeddings(model_path)
-    print(f"Embeddings shape: {embeddings.shape}")
+        # Train the model
+        model_path = f"saved_models/{args.dataset}/link_prediction/{args.embedding_type}_model.bin"
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        embedding_runner.train(adjacency_matrix=adjacency_matrix, model_path=model_path)
 
-    # Convert embeddings to Poincaré for better visualization
-    if native_space != "poincare":
-        poincare_embeddings = convert_coordinates(embeddings, native_space, "poincare")
-    else:
-        poincare_embeddings = embeddings
+        # Get embeddings
+        embeddings = embedding_runner.get_all_embeddings(model_path)
+        print(f"Embeddings shape: {embeddings.shape}")
 
-    plot_title = "Omega E Graph Embeddings in Poincaré Disk"
-    save_path = f"{PATH}/{args.embedding_type}_omega_E_graph_embeddings.pdf"
-    plot_embeddings(poincare_embeddings, embedding_runner, omega_E, [], [], plot_title, save_path, max_edges)
+        # Convert embeddings to Poincaré for better visualization
+        if native_space != "poincare":
+            poincare_embeddings = convert_coordinates(embeddings, native_space, "poincare")
+        else:
+            poincare_embeddings = embeddings
 
-    # Convert to hyperboloid coordinates if needed
-    native_space = embedding_runner.model.native_space
-    if native_space != "hyperboloid":
-        print(f"Converting embeddings from {native_space} to hyperboloid coordinates")
-        hyperboloid_embeddings = convert_coordinates(embeddings, native_space, "hyperboloid")
-    else:
-        hyperboloid_embeddings = embeddings
+        plot_title = "Omega E Graph Embeddings in Poincaré Disk"
+        save_path = f"{PATH}/{args.embedding_type}_omega_E_graph_embeddings.pdf"
+        plot_embeddings(poincare_embeddings, embedding_runner, omega_E, [], [], plot_title, save_path, max_edges)
 
-    # Compute hyperbolic distances
-    print("Computing hyperbolic distances...")
-    distances = compute_distances(hyperboloid_embeddings, space="hyperboloid")
-    print(f"Distance matrix shape: {distances.shape}")
-    print(f"Distance range: {distances[distances > 0].min():.4f} to {distances.max():.4f}")
+        # Convert to hyperboloid coordinates if needed
+        native_space = embedding_runner.model.native_space
+        if native_space != "hyperboloid":
+            print(f"Converting embeddings from {native_space} to hyperboloid coordinates")
+            hyperboloid_embeddings = convert_coordinates(embeddings, native_space, "hyperboloid")
+        else:
+            hyperboloid_embeddings = embeddings
+
+        # Compute hyperbolic distances
+        print("Computing hyperbolic distances...")
+        distances = compute_distances(hyperboloid_embeddings, space="hyperboloid")
+        print(f"Distance matrix shape: {distances.shape}")
+        print(f"Distance range: {distances[distances > 0].min():.4f} to {distances.max():.4f}")
 
     # Predict links from Ω_R + Ω_N (removed links + true non-links)
     omega_R = results["omega_R"]
@@ -813,9 +798,20 @@ def main():
     n_links = args.n_links if args.n_links else len(omega_R)
     print(f"Number of links to predict: {n_links}")
 
-    predicted_links, sorted_all_candidates = predict_links(
-        distances, n_links=n_links, candidate_edges=omega_R_plus_N, return_sorted_candidates=True
-    )
+    if args.embedding_type == "rdpg":
+        # Compute probability matrix for RDPG
+        print("Computing RDPG probability matrix...")
+        probabilities = np.dot(embeddings, embeddings.T)
+        print(f"Probability matrix shape: {probabilities.shape}")
+        print(f"Probability range: {probabilities[probabilities > 0].min():.4f} to {probabilities.max():.4f}")
+        predicted_links, sorted_all_candidates = predict_links_from_probabilities(
+            probabilities, n_links=n_links, candidate_edges=omega_R_plus_N, return_sorted_candidates=True
+        )
+    else:
+        predicted_links, sorted_all_candidates = predict_links(
+            distances, n_links=n_links, candidate_edges=omega_R_plus_N, return_sorted_candidates=True
+        )
+    print(f"Top 10 sorted links: {sorted_all_candidates[:10]}")
 
     # Evaluate predictions against removed edges (Ω_R) - the true positive targets
     print()
@@ -827,10 +823,11 @@ def main():
 
     # Compute lift curve statistics for both deciles and centiles
     print("Computing decile analysis (10 bins)...")
-    lift_data_deciles = compute_lift_curve(sorted_all_candidates, omega_R, n_bins=10)
+    is_rdpg = args.embedding_type == "rdpg"
+    lift_data_deciles = compute_lift_curve(sorted_all_candidates, omega_R, n_bins=10, descending=is_rdpg)
 
     print("Computing centile analysis (100 bins)...")
-    lift_data_centiles = compute_lift_curve(sorted_all_candidates, omega_R, n_bins=100)
+    lift_data_centiles = compute_lift_curve(sorted_all_candidates, omega_R, n_bins=100, descending=is_rdpg)
 
     # Generate lift curve visualizations for both
     print("Generating visualizations...")
@@ -886,37 +883,31 @@ def main():
         else:
             false_positives.append((u, v, dist))
 
-    # print(f"\nPrediction Analysis:")
-
-    # print("\nRecovered links (node1, node2, distance):")
-    # for u, v, dist in recovered_links:
-    #     print(f"  ({u}, {v}): {dist:.4f}")
-
-    # print("\nFalse positives (node1, node2, distance):")
-    # for u, v, dist in false_positives:
-    #     print(f"  ({u}, {v}): {dist:.4f}")
-
     true_links = []
-    for u, v in omega_R:
-        dist = distances[u, v]
-        true_links.append((u, v, dist))
-
-    # print("\nTrue links (Omega R) (node1, node2, distance):")
-    # for u, v, dist in true_links:
-    #     print(f"  ({u}, {v}): {dist:.4f}")
+    if args.embedding_type == "rdpg":
+        for u, v in omega_R:
+            prob = probabilities[u, v]
+            true_links.append((u, v, prob))
+    else:
+        for u, v in omega_R:
+            dist = distances[u, v]
+            true_links.append((u, v, dist))
 
     # Create a visualization showing predicted links
     print("\nCreating visualization...")
 
-    # Convert embeddings to Poincaré for better visualization
-    if native_space != "poincare":
-        poincare_embeddings = convert_coordinates(hyperboloid_embeddings, "hyperboloid", "poincare")
-    else:
-        poincare_embeddings = embeddings
+    # Convert embeddings to Poincaré for better visualization (skip for RDPG)
+    if args.embedding_type != "rdpg":
+        if native_space != "poincare":
+            poincare_embeddings = convert_coordinates(hyperboloid_embeddings, "hyperboloid", "poincare")
+        else:
+            poincare_embeddings = embeddings
 
-    plot_title = "Predicted Links in Poincaré Disk"
-    save_path = f"{PATH}/{args.embedding_type}_omega_E_predicted_links.pdf"
-    plot_embeddings(poincare_embeddings, embedding_runner, omega_E, recovered_links, false_positives, plot_title, save_path, max_edges)
+        plot_title = "Predicted Links in Poincaré Disk"
+        save_path = f"{PATH}/{args.embedding_type}_omega_E_predicted_links.pdf"
+        plot_embeddings(poincare_embeddings, embedding_runner, omega_E, recovered_links, false_positives, plot_title, save_path, max_edges)
+    else:
+        print("Skipping Poincaré visualization for RDPG embeddings")
 
     print("\nPipeline completed successfully!")
 
