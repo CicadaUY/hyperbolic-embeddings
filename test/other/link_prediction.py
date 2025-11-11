@@ -871,8 +871,8 @@ def main():
 
     # Save results analysis to file
     results_path = f"{RESULTS_PATH}/{args.embedding_type}_result_analysis.txt"
-    save_results_analysis(metrics, args, results, graph_info, lift_data_deciles, lift_data_centiles, sorted_all_candidates, results_path)
-    print(f"\Results analysis saved to: {results_path}")
+    save_results_analysis(metrics, args, results, graph_info, lift_data_deciles, lift_data_centiles, results_path)
+    print(f"\nResults analysis saved to: {results_path}")
 
     # Analyze predictions: recovered links vs false positives
     recovered_links = []  # Correctly predicted removed links (from Ω_R)
