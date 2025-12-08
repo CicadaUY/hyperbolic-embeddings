@@ -13,6 +13,7 @@ import numpy as np
 from numpy.random import default_rng
 from scipy.linalg import eigh
 from scipy.optimize import minimize, minimize_scalar
+from scipy.sparse.linalg import eigsh
 
 
 def hydra(D, dim=2, curvature=1, alpha=1.1, equi_adj=0.5, control=None):
@@ -109,7 +110,21 @@ def hydra_fixed_curvature(D, dim=2, curvature=1, alpha=1, equi_adj=0, control=No
         raise ValueError("Gram matrix contains infinite values.")
 
     # Spectral decomposition
-    spec_vals, spec_vecs = eigh(A)
+    # Use sparse eigendecomposition for large graphs (N > 1000) to improve performance
+    use_sparse = n > 1000
+    if use_sparse:
+        # Compute eigenvalues/vectors using sparse solver
+        # We need the largest eigenvalue (lambda0) and dim smallest eigenvalues
+        # Use 'BE' mode to get eigenvalues from both ends of the spectrum
+        k = min(dim + 1, n - 1)  # We need dim smallest + 1 largest, but k must be < n
+        spec_vals, spec_vecs = eigsh(A, k=k, which="BE")  # 'BE' = both ends
+        # Sort in ascending order to match eigh behavior
+        sort_idx = np.argsort(spec_vals)
+        spec_vals = spec_vals[sort_idx]
+        spec_vecs = spec_vecs[:, sort_idx]
+    else:
+        spec_vals, spec_vecs = eigh(A)
+
     lambda0 = spec_vals[-1]
     x0 = spec_vecs[:, -1] * np.sqrt(lambda0)  # Main Lorentz coordinate
     if x0[0] < 0:

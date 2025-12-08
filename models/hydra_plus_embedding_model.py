@@ -47,10 +47,10 @@ class HydraPlusModel(BaseHyperbolicModel):
         lengths = dict(nx.all_pairs_shortest_path_length(G))
         n = G.number_of_nodes()
         D = np.zeros((n, n))
-        for i in range(n):
-            for j in range(n):
-                if i in lengths and j in lengths[i]:
-                    D[i, j] = lengths[i][j]
+        # Vectorized distance matrix construction
+        for i in lengths:
+            for j, dist in lengths[i].items():
+                D[i, j] = dist
 
         # Run Hydra
         self.embeddings = hydra_plus(

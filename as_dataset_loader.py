@@ -15,6 +15,7 @@ Dataset Information:
 
 import gzip
 import os
+import random
 import urllib.request
 from typing import Optional, Tuple
 
@@ -251,6 +252,55 @@ class ASDatasetLoader:
         print(f"Graph: {len(graph.nodes())} nodes, {len(graph.edges())} edges")
 
         return graph, metadata
+
+
+def create_subgraph(graph: nx.Graph, target_nodes: int = 1000, random_seed: Optional[int] = None) -> nx.Graph:
+    """
+    Create a connected subgraph with approximately target_nodes nodes using BFS.
+
+    This function performs a breadth-first search starting from a random node
+    and collects nodes until reaching the target number. The resulting subgraph
+    will be connected and contain up to target_nodes nodes.
+
+    Args:
+        graph: NetworkX graph to sample from
+        target_nodes: Target number of nodes (default: 1000)
+        random_seed: Random seed for reproducibility (default: None)
+
+    Returns:
+        NetworkX Graph subgraph with up to target_nodes nodes. If the original
+        graph has fewer than target_nodes nodes, returns the entire graph.
+    """
+    # Set random seed if provided
+    if random_seed is not None:
+        random.seed(random_seed)
+
+    # If graph is smaller than target, return entire graph
+    if len(graph.nodes()) <= target_nodes:
+        return graph.copy()
+
+    # Select a random starting node
+    start_node = random.choice(list(graph.nodes()))
+
+    # Perform BFS to collect nodes
+    visited = set()
+    queue = [start_node]
+    visited.add(start_node)
+
+    # Continue BFS until we have enough nodes or run out of nodes to visit
+    while queue and len(visited) < target_nodes:
+        current = queue.pop(0)
+
+        # Add unvisited neighbors to the queue
+        for neighbor in graph.neighbors(current):
+            if neighbor not in visited and len(visited) < target_nodes:
+                visited.add(neighbor)
+                queue.append(neighbor)
+
+    # Create subgraph from collected nodes
+    subgraph = graph.subgraph(visited).copy()
+
+    return subgraph
 
 
 def main():

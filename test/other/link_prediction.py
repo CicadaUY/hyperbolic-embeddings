@@ -1,11 +1,14 @@
 import argparse
+import json
 import os
+import pickle
 import random
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+import scipy
 from graspologic.embed import AdjacencySpectralEmbed
 
 from as_dataset_loader import ASDatasetLoader
@@ -653,14 +656,20 @@ def parse_args():
         "--dataset",
         type=str,
         default="ToggleSwitch",
-        choices=["ToggleSwitch", "AS", "Olsson", "MyeloidProgenitors", "krumsiek11_blobs", "Paul"],
-        help="Dataset to use: ToggleSwitch (PoincareMaps) or AS (Stanford SNAP Autonomous Systems)",
+        choices=["ToggleSwitch", "AS", "Olsson", "MyeloidProgenitors", "krumsiek11_blobs", "Paul", "Cora"],
+        help="Dataset to use: ToggleSwitch (PoincareMaps), AS (Stanford SNAP Autonomous Systems), or Cora",
     )
     parser.add_argument(
         "--n_bins",
         type=int,
         default=10,
         help="Number of bins for lift curve analysis (10 for deciles, 100 for centiles, etc.)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducible edge removal (default: None, non-deterministic)",
     )
 
     return parser.parse_args()
@@ -688,6 +697,17 @@ def main():
         print("Loading Stanford SNAP AS dataset...")
         as_loader = ASDatasetLoader()
         graph, metadata = as_loader.load_as_networkx()
+    elif args.dataset == "Cora":
+        print("Loading CORA dataset...")
+        with open("./data/Cora/cora_graph.pkl", "rb") as f:
+            edge_list = pickle.load(f)
+        with open("./data/Cora/cora_graph.json", "r") as f:
+            graph_data = json.load(f)
+
+        # Build networkx graph from edge list
+        graph = nx.Graph()
+        graph.add_edges_from(edge_list)
+        metadata = {"labels": graph_data.get("y", None)}
     else:
         print(f"Loading PoincareMaps dataset: {args.dataset}")
         loader = PoincareMapsLoader("models/PoincareMaps/datasets/")
@@ -702,7 +722,7 @@ def main():
 
     # Simulate link removal
     print("Simulating link removal...")
-    results = simulate_link_removal(graph, q=args.q)
+    results = simulate_link_removal(graph, q=args.q, seed=args.seed)
     omega_E = results["omega_E"]  # List of remaining links
 
     # Create graph with same nodes as original graph and edges from omega_E
@@ -716,6 +736,13 @@ def main():
     if args.embedding_type == "rdpg":
         print("Computing RDPG embeddings...")
         adjacency_matrix = nx.to_numpy_array(graph_from_omega_E)
+
+        (w, v) = scipy.sparse.linalg.eigs(adjacency_matrix, k=10, which="LM")
+
+        wabs = np.array(list(zip(-np.abs(w), -np.sign(np.real(w)))), dtype=[("abs", "f4"), ("sign", "i4")])
+        w = w[np.argsort(wabs, order=["abs", "sign"])]
+        print(f"Eigenvalues: {w}")
+
         d = 2  # Default dimension for RDPG
         ase = AdjacencySpectralEmbed(n_components=d, diag_aug=True, algorithm="full")
         embeddings = ase.fit_transform(adjacency_matrix)

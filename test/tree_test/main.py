@@ -5,7 +5,8 @@ import networkx as nx
 import numpy as np
 
 from hyperbolic_embeddings import HyperbolicEmbeddings
-
+import multiprocessing
+multiprocessing.set_start_method("spawn", force=True)
 
 def main():
     parser = argparse.ArgumentParser(description="Train and plot hyperbolic embeddings for the Karate Club graph.")

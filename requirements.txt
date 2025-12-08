@@ -15,3 +15,5 @@ torch_geometric
 tqdm
 matplotlib
 networkx
+graspologic
+ogb
