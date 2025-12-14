@@ -1,16 +1,14 @@
 """
-AS Dataset Loader for Stanford SNAP Autonomous Systems Dataset
+SNAP Dataset Loader for Stanford SNAP Datasets
 
-This module provides functionality to download, parse, and load the Stanford SNAP
-Autonomous Systems dataset (January 2, 2000) as NetworkX graphs.
+This module provides functionality to download, parse, and load various Stanford SNAP
+datasets as NetworkX graphs. Currently supports:
+- AS (Autonomous Systems) dataset
+- Facebook ego networks dataset
 
 Dataset Information:
-- Source: https://snap.stanford.edu/data/as.html
-- File: as20000102.txt.gz
-- Expected Statistics:
-  - Nodes: 6474
-  - Edges: 12572 (13895 total - 1323 self-loops)
-  - Format: Tab-separated edge list (node1\tnode2)
+- AS: https://snap.stanford.edu/data/as.html
+- Facebook: https://snap.stanford.edu/data/egonets-Facebook.html
 """
 
 import gzip
@@ -22,38 +20,90 @@ from typing import Optional, Tuple
 import networkx as nx
 
 
-class ASDatasetLoader:
-    """
-    Loader for the Stanford SNAP Autonomous Systems dataset.
+# Dataset configurations
+DATASET_CONFIGS = {
+    "as": {
+        "url": "https://snap.stanford.edu/data/as20000102.txt.gz",
+        "filename": "as20000102.txt.gz",
+        "expected_nodes": 6474,
+        "expected_edges": 12572,
+        "separator": "\t",  # Tab-separated
+        "name": "Stanford SNAP AS-20000102",
+        "date": "January 2, 2000",
+        "source": "University of Oregon Route Views Project",
+        "description": "Autonomous Systems graph from BGP routing data",
+    },
+    "facebook": {
+        "url": "https://snap.stanford.edu/data/facebook_combined.txt.gz",
+        "filename": "facebook_combined.txt.gz",
+        "expected_nodes": 4039,
+        "expected_edges": 88234,
+        "separator": " ",  # Space-separated
+        "name": "Stanford SNAP Facebook Ego Networks",
+        "date": "2012",
+        "source": "Facebook App Survey",
+        "description": "Facebook social circles (ego networks) from survey participants",
+    },
+}
 
-    This class handles downloading, caching, parsing, and converting the AS dataset
+
+class SNAPDatasetLoader:
+    """
+    Unified loader for Stanford SNAP datasets.
+
+    This class handles downloading, caching, parsing, and converting SNAP datasets
     into NetworkX graph format with proper validation.
     """
 
-    # Dataset URL and expected statistics
-    DATASET_URL = "https://snap.stanford.edu/data/as20000102.txt.gz"
-    EXPECTED_NODES = 6474
-    EXPECTED_EDGES = 12572  # Actual valid edges (13895 total - 1323 self-loops)
-
-    def __init__(self, cache_dir: str = "data/as_dataset"):
+    def __init__(self, cache_dir: str = "data/snap_dataset"):
         """
-        Initialize the AS dataset loader.
+        Initialize the SNAP dataset loader.
 
         Args:
-            cache_dir: Directory to cache downloaded dataset files
+            cache_dir: Base directory to cache downloaded dataset files
         """
         self.cache_dir = cache_dir
-        self.dataset_filename = "as20000102.txt.gz"
-        self.dataset_path = os.path.join(cache_dir, self.dataset_filename)
-
         # Create cache directory if it doesn't exist
         os.makedirs(cache_dir, exist_ok=True)
 
-    def download_dataset(self, force_download: bool = False) -> str:
+    def _get_dataset_config(self, dataset_type: str) -> dict:
         """
-        Download the AS dataset if not already cached.
+        Get configuration for a specific dataset type.
 
         Args:
+            dataset_type: Type of dataset ("as" or "facebook")
+
+        Returns:
+            Dictionary with dataset configuration
+
+        Raises:
+            ValueError: If dataset_type is not supported
+        """
+        if dataset_type not in DATASET_CONFIGS:
+            raise ValueError(f"Unsupported dataset type: {dataset_type}. Supported types: {list(DATASET_CONFIGS.keys())}")
+        return DATASET_CONFIGS[dataset_type]
+
+    def _get_dataset_path(self, dataset_type: str) -> str:
+        """
+        Get the path where a dataset file should be cached.
+
+        Args:
+            dataset_type: Type of dataset ("as" or "facebook")
+
+        Returns:
+            Path to the dataset file
+        """
+        config = self._get_dataset_config(dataset_type)
+        dataset_subdir = os.path.join(self.cache_dir, dataset_type)
+        os.makedirs(dataset_subdir, exist_ok=True)
+        return os.path.join(dataset_subdir, config["filename"])
+
+    def download_dataset(self, dataset_type: str, force_download: bool = False) -> str:
+        """
+        Download a SNAP dataset if not already cached.
+
+        Args:
+            dataset_type: Type of dataset ("as" or "facebook")
             force_download: If True, download even if file exists
 
         Returns:
@@ -62,23 +112,27 @@ class ASDatasetLoader:
         Raises:
             Exception: If download fails
         """
-        if os.path.exists(self.dataset_path) and not force_download:
-            print(f"Dataset already cached at: {self.dataset_path}")
-            return self.dataset_path
+        config = self._get_dataset_config(dataset_type)
+        dataset_path = self._get_dataset_path(dataset_type)
 
-        print(f"Downloading AS dataset from: {self.DATASET_URL}")
+        if os.path.exists(dataset_path) and not force_download:
+            print(f"Dataset already cached at: {dataset_path}")
+            return dataset_path
+
+        print(f"Downloading {dataset_type.upper()} dataset from: {config['url']}")
         try:
-            urllib.request.urlretrieve(self.DATASET_URL, self.dataset_path)
-            print(f"Dataset downloaded successfully to: {self.dataset_path}")
-            return self.dataset_path
+            urllib.request.urlretrieve(config["url"], dataset_path)
+            print(f"Dataset downloaded successfully to: {dataset_path}")
+            return dataset_path
         except Exception as e:
             raise Exception(f"Failed to download dataset: {str(e)}")
 
-    def parse_dataset(self, file_path: Optional[str] = None) -> nx.Graph:
+    def parse_dataset(self, dataset_type: str, file_path: Optional[str] = None) -> nx.Graph:
         """
-        Parse the AS dataset file and create a NetworkX graph.
+        Parse a SNAP dataset file and create a NetworkX graph.
 
         Args:
+            dataset_type: Type of dataset ("as" or "facebook")
             file_path: Path to the dataset file (uses cached file if None)
 
         Returns:
@@ -88,16 +142,18 @@ class ASDatasetLoader:
             FileNotFoundError: If dataset file doesn't exist
             Exception: If parsing fails
         """
+        config = self._get_dataset_config(dataset_type)
         if file_path is None:
-            file_path = self.dataset_path
+            file_path = self._get_dataset_path(dataset_type)
 
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Dataset file not found: {file_path}")
 
-        print(f"Parsing AS dataset from: {file_path}")
+        print(f"Parsing {dataset_type.upper()} dataset from: {file_path}")
 
         # Create empty graph
         graph = nx.Graph()
+        separator = config["separator"]
 
         try:
             # Open and parse the gzipped file
@@ -110,10 +166,10 @@ class ASDatasetLoader:
                     if not line or line.startswith("#"):
                         continue
 
-                    # Parse edge (tab-separated node IDs)
-                    parts = line.split("\t")
+                    # Parse edge using the configured separator
+                    parts = line.split(separator)
                     if len(parts) != 2:
-                        # Fallback to space-separated if tab-separated fails
+                        # Fallback to whitespace splitting if configured separator fails
                         parts = line.split()
                         if len(parts) != 2:
                             print(f"Warning: Skipping malformed line {line_num}: {line}")
@@ -141,26 +197,28 @@ class ASDatasetLoader:
 
         return graph
 
-    def validate_graph(self, graph: nx.Graph) -> bool:
+    def validate_graph(self, graph: nx.Graph, dataset_type: str) -> bool:
         """
         Validate the loaded graph against expected statistics.
 
         Args:
             graph: NetworkX graph to validate
+            dataset_type: Type of dataset ("as" or "facebook")
 
         Returns:
             True if validation passes, False otherwise
         """
+        config = self._get_dataset_config(dataset_type)
         num_nodes = len(graph.nodes())
         num_edges = len(graph.edges())
 
         print("Graph Statistics:")
-        print(f"  Nodes: {num_nodes} (expected: {self.EXPECTED_NODES})")
-        print(f"  Edges: {num_edges} (expected: {self.EXPECTED_EDGES})")
+        print(f"  Nodes: {num_nodes} (expected: {config['expected_nodes']})")
+        print(f"  Edges: {num_edges} (expected: {config['expected_edges']})")
 
         # Check if statistics match expected values
-        nodes_match = num_nodes == self.EXPECTED_NODES
-        edges_match = num_edges == self.EXPECTED_EDGES
+        nodes_match = num_nodes == config["expected_nodes"]
+        edges_match = num_edges == config["expected_edges"]
 
         if nodes_match and edges_match:
             print("✓ Graph validation passed!")
@@ -168,9 +226,9 @@ class ASDatasetLoader:
         else:
             print("✗ Graph validation failed!")
             if not nodes_match:
-                print(f"  Node count mismatch: got {num_nodes}, expected {self.EXPECTED_NODES}")
+                print(f"  Node count mismatch: got {num_nodes}, expected {config['expected_nodes']}")
             if not edges_match:
-                print(f"  Edge count mismatch: got {num_edges}, expected {self.EXPECTED_EDGES}")
+                print(f"  Edge count mismatch: got {num_edges}, expected {config['expected_edges']}")
             return False
 
     def get_graph_info(self, graph: nx.Graph) -> dict:
@@ -205,9 +263,62 @@ class ASDatasetLoader:
 
         return info
 
+    def load_networkx(self, dataset_type: str, force_download: bool = False, validate: bool = True) -> Tuple[nx.Graph, dict]:
+        """
+        Complete pipeline to load a SNAP dataset as NetworkX graph.
+
+        Args:
+            dataset_type: Type of dataset ("as" or "facebook")
+            force_download: If True, re-download dataset even if cached
+            validate: If True, validate graph against expected statistics
+
+        Returns:
+            Tuple of (NetworkX graph, metadata dictionary)
+
+        Raises:
+            Exception: If any step in the pipeline fails
+        """
+        config = self._get_dataset_config(dataset_type)
+        dataset_name = config["name"]
+
+        print(f"Loading {dataset_name}")
+        print("=" * len(dataset_name))
+
+        # Download dataset
+        dataset_path = self.download_dataset(dataset_type, force_download=force_download)
+
+        # Parse dataset
+        graph = self.parse_dataset(dataset_type, dataset_path)
+
+        # Validate if requested
+        if validate:
+            validation_passed = self.validate_graph(graph, dataset_type)
+            if not validation_passed:
+                print("Warning: Graph validation failed, but continuing...")
+
+        # Get detailed graph information
+        graph_info = self.get_graph_info(graph)
+
+        # Create metadata
+        metadata = {
+            "dataset_name": dataset_name,
+            "dataset_url": config["url"],
+            "date": config["date"],
+            "source": config["source"],
+            "description": config["description"],
+            "validation_passed": validate and self.validate_graph(graph, dataset_type),
+            **graph_info,
+        }
+
+        print("\nDataset loaded successfully!")
+        print(f"Graph: {len(graph.nodes())} nodes, {len(graph.edges())} edges")
+
+        return graph, metadata
+
     def load_as_networkx(self, force_download: bool = False, validate: bool = True) -> Tuple[nx.Graph, dict]:
         """
         Complete pipeline to load AS dataset as NetworkX graph.
+        Convenience method for backward compatibility.
 
         Args:
             force_download: If True, re-download dataset even if cached
@@ -219,39 +330,11 @@ class ASDatasetLoader:
         Raises:
             Exception: If any step in the pipeline fails
         """
-        print("Loading Stanford SNAP AS Dataset (January 2, 2000)")
-        print("=" * 55)
+        return self.load_networkx("as", force_download=force_download, validate=validate)
 
-        # Download dataset
-        dataset_path = self.download_dataset(force_download=force_download)
 
-        # Parse dataset
-        graph = self.parse_dataset(dataset_path)
-
-        # Validate if requested
-        if validate:
-            validation_passed = self.validate_graph(graph)
-            if not validation_passed:
-                print("Warning: Graph validation failed, but continuing...")
-
-        # Get detailed graph information
-        graph_info = self.get_graph_info(graph)
-
-        # Create metadata
-        metadata = {
-            "dataset_name": "Stanford SNAP AS-20000102",
-            "dataset_url": self.DATASET_URL,
-            "date": "January 2, 2000",
-            "source": "University of Oregon Route Views Project",
-            "description": "Autonomous Systems graph from BGP routing data",
-            "validation_passed": validate and self.validate_graph(graph),
-            **graph_info,
-        }
-
-        print("\nDataset loaded successfully!")
-        print(f"Graph: {len(graph.nodes())} nodes, {len(graph.edges())} edges")
-
-        return graph, metadata
+# Backward compatibility: Create alias for old class name
+ASDatasetLoader = SNAPDatasetLoader
 
 
 def create_subgraph(graph: nx.Graph, target_nodes: int = 1000, random_seed: Optional[int] = None) -> nx.Graph:
@@ -305,20 +388,22 @@ def create_subgraph(graph: nx.Graph, target_nodes: int = 1000, random_seed: Opti
 
 def main():
     """
-    Example usage of the AS dataset loader.
+    Example usage of the SNAP dataset loader.
     """
     # Create loader instance
-    loader = ASDatasetLoader()
+    loader = SNAPDatasetLoader()
 
-    # Load the dataset
+    # Load AS dataset
+    print("\n" + "=" * 60)
+    print("Loading AS Dataset")
+    print("=" * 60)
     try:
-        graph, metadata = loader.load_as_networkx()
+        graph, metadata = loader.load_networkx("as")
 
         print("\nDataset Metadata:")
         for key, value in metadata.items():
             print(f"  {key}: {value}")
 
-        # Example: Get some basic graph properties
         print("\nSample edges (first 10):")
         for i, (u, v) in enumerate(list(graph.edges())[:10]):
             print(f"  {u} -- {v}")
@@ -330,8 +415,33 @@ def main():
         print(f"  Average degree: {sum(degrees) / len(degrees):.2f}")
 
     except Exception as e:
-        print(f"Error loading dataset: {str(e)}")
+        print(f"Error loading AS dataset: {str(e)}")
+
+    # Load Facebook dataset
+    print("\n" + "=" * 60)
+    print("Loading Facebook Dataset")
+    print("=" * 60)
+    try:
+        graph, metadata = loader.load_networkx("facebook")
+
+        print("\nDataset Metadata:")
+        for key, value in metadata.items():
+            print(f"  {key}: {value}")
+
+        print("\nSample edges (first 10):")
+        for i, (u, v) in enumerate(list(graph.edges())[:10]):
+            print(f"  {u} -- {v}")
+
+        print("\nNode degree statistics:")
+        degrees = [graph.degree(n) for n in graph.nodes()]
+        print(f"  Min degree: {min(degrees)}")
+        print(f"  Max degree: {max(degrees)}")
+        print(f"  Average degree: {sum(degrees) / len(degrees):.2f}")
+
+    except Exception as e:
+        print(f"Error loading Facebook dataset: {str(e)}")
 
 
 if __name__ == "__main__":
     main()
+

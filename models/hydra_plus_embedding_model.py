@@ -20,6 +20,9 @@ class HydraPlusModel(BaseHyperbolicModel):
         self.curvature_freeze = config.get("curvature_freeze", True)
         self.curvature_max = config.get("curvature_max", None)
         self.maxit = config.get("maxit", 1000)
+        self.device = config.get("device", None)  # 'cuda', 'mps', 'cpu', or None for auto-detect
+        self.use_gpu = config.get("use_gpu", False)  # Whether to attempt GPU acceleration (default False for backward compatibility)
+        self.seed = config.get("seed", None)  # Random seed for reproducibility
 
     @property
     def native_space(self) -> str:
@@ -64,6 +67,9 @@ class HydraPlusModel(BaseHyperbolicModel):
             self.curvature_freeze,
             self.curvature_max,
             self.maxit,
+            seed=self.seed,
+            device=self.device,
+            use_gpu=self.use_gpu,
         )
 
         # Save embeddings

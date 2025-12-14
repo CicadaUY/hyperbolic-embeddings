@@ -11,10 +11,15 @@ import numpy as np
 import scipy
 from graspologic.embed import AdjacencySpectralEmbed
 
-from as_dataset_loader import ASDatasetLoader
 from hyperbolic_embeddings import HyperbolicEmbeddings
 from poincare_maps_networkx_loader import PoincareMapsLoader
+from snap_dataset_loader import SNAPDatasetLoader
 from utils.geometric_conversions import compute_distances, convert_coordinates
+
+try:
+    from torch_geometric.datasets import Airports
+except ImportError:
+    Airports = None
 
 
 def create_test_tree_graph(branching_factor: int = 2, depth: int = 4) -> nx.Graph:
@@ -645,7 +650,16 @@ def parse_args():
         "--embedding_type",
         type=str,
         default="poincare_maps",
-        choices=["poincare_embeddings", "lorentz", "poincare_maps", "dmercator", "hydra", "hypermap", "hydra_plus", "rdpg"],
+        choices=[
+            "poincare_embeddings",
+            "lorentz",
+            "poincare_maps",
+            "dmercator",
+            "hydra",
+            "hypermap",
+            "hydra_plus",
+            "rdpg",
+        ],
         help="Type of hyperbolic embedding to use",
     )
     parser.add_argument(
@@ -656,8 +670,20 @@ def parse_args():
         "--dataset",
         type=str,
         default="ToggleSwitch",
-        choices=["ToggleSwitch", "AS", "Olsson", "MyeloidProgenitors", "krumsiek11_blobs", "Paul", "Cora"],
-        help="Dataset to use: ToggleSwitch (PoincareMaps), AS (Stanford SNAP Autonomous Systems), or Cora",
+        choices=[
+            "ToggleSwitch",
+            "AS",
+            "Facebook",
+            "Olsson",
+            "MyeloidProgenitors",
+            "krumsiek11_blobs",
+            "Paul",
+            "Cora",
+            "AirportsUSA",
+            "AirportsBrazil",
+            "AirportsEurope",
+        ],
+        help="Dataset to use: ToggleSwitch (PoincareMaps), AS (Stanford SNAP Autonomous Systems), Facebook (Stanford SNAP), Cora, or Airports (USA/Brazil/Europe)",
     )
     parser.add_argument(
         "--n_bins",
@@ -695,8 +721,12 @@ def main():
     # Load dataset based on type
     if args.dataset == "AS":
         print("Loading Stanford SNAP AS dataset...")
-        as_loader = ASDatasetLoader()
-        graph, metadata = as_loader.load_as_networkx()
+        snap_loader = SNAPDatasetLoader()
+        graph, metadata = snap_loader.load_networkx("as")
+    elif args.dataset == "Facebook":
+        print("Loading Stanford SNAP Facebook dataset...")
+        snap_loader = SNAPDatasetLoader()
+        graph, metadata = snap_loader.load_networkx("facebook")
     elif args.dataset == "Cora":
         print("Loading CORA dataset...")
         with open("./data/Cora/cora_graph.pkl", "rb") as f:
@@ -708,6 +738,60 @@ def main():
         graph = nx.Graph()
         graph.add_edges_from(edge_list)
         metadata = {"labels": graph_data.get("y", None)}
+    elif args.dataset == "AirportsUSA":
+        print("Loading Airports USA dataset...")
+        if Airports is None:
+            raise ImportError("torch_geometric package is required. Install it with: pip install torch-geometric")
+        dataset = Airports(root="./data/airports", name="USA")
+        data = dataset[0]
+
+        # Convert to NetworkX graph
+        edge_index = data.edge_index.numpy()
+        edges = [(int(edge_index[0, i]), int(edge_index[1, i])) for i in range(edge_index.shape[1])]
+
+        graph = nx.Graph()
+        graph.add_edges_from(edges)
+        graph.add_nodes_from(range(data.num_nodes))
+
+        # Extract labels if available
+        labels = data.y.numpy() if data.y is not None else None
+        metadata = {"labels": labels, "dataset_name": "AirportsUSA", "num_nodes": data.num_nodes, "num_edges": data.num_edges}
+    elif args.dataset == "AirportsBrazil":
+        print("Loading Airports Brazil dataset...")
+        if Airports is None:
+            raise ImportError("torch_geometric package is required. Install it with: pip install torch-geometric")
+        dataset = Airports(root="./data/airports", name="Brazil")
+        data = dataset[0]
+
+        # Convert to NetworkX graph
+        edge_index = data.edge_index.numpy()
+        edges = [(int(edge_index[0, i]), int(edge_index[1, i])) for i in range(edge_index.shape[1])]
+
+        graph = nx.Graph()
+        graph.add_edges_from(edges)
+        graph.add_nodes_from(range(data.num_nodes))
+
+        # Extract labels if available
+        labels = data.y.numpy() if data.y is not None else None
+        metadata = {"labels": labels, "dataset_name": "AirportsBrazil", "num_nodes": data.num_nodes, "num_edges": data.num_edges}
+    elif args.dataset == "AirportsEurope":
+        print("Loading Airports Europe dataset...")
+        if Airports is None:
+            raise ImportError("torch_geometric package is required. Install it with: pip install torch-geometric")
+        dataset = Airports(root="./data/airports", name="Europe")
+        data = dataset[0]
+
+        # Convert to NetworkX graph
+        edge_index = data.edge_index.numpy()
+        edges = [(int(edge_index[0, i]), int(edge_index[1, i])) for i in range(edge_index.shape[1])]
+
+        graph = nx.Graph()
+        graph.add_edges_from(edges)
+        graph.add_nodes_from(range(data.num_nodes))
+
+        # Extract labels if available
+        labels = data.y.numpy() if data.y is not None else None
+        metadata = {"labels": labels, "dataset_name": "AirportsEurope", "num_nodes": data.num_nodes, "num_edges": data.num_edges}
     else:
         print(f"Loading PoincareMaps dataset: {args.dataset}")
         loader = PoincareMapsLoader("models/PoincareMaps/datasets/")
@@ -762,7 +846,12 @@ def main():
                 "hydra": {"dim": 3},  # Increase dimension for larger graphs
                 "poincare_maps": {"dim": 2, "epochs": 500},
                 "hypermap": {"dim": 3},
-                "hydra_plus": {"dim": 3},  # Increase dimension for larger graphs
+                "hydra_plus": {
+                    "dim": 2,
+                    "device": None,
+                    "use_gpu": False,
+                    "seed": args.seed,
+                },
             }
         else:
             configurations = {
@@ -772,10 +861,13 @@ def main():
                 "hydra": {"dim": 2},
                 "poincare_maps": {"dim": 2, "epochs": 1000},
                 "hypermap": {"dim": 3},
-                "hydra_plus": {"dim": 2},
+                "hydra_plus": {
+                    "dim": 2,
+                    "device": None,
+                    "use_gpu": False,
+                    "seed": args.seed,
+                },
             }
-        config = configurations[args.embedding_type]
-        embedding_runner = HyperbolicEmbeddings(embedding_type=args.embedding_type, config=config)
         config = configurations[args.embedding_type]
         embedding_runner = HyperbolicEmbeddings(embedding_type=args.embedding_type, config=config)
 
