@@ -3,6 +3,7 @@ import json
 import os
 import pickle
 import random
+import time
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -542,6 +543,7 @@ def save_results_analysis(
     graph_info: dict,
     lift_data_deciles: dict,
     lift_data_centiles: dict,
+    training_time: float,
     save_path: str,
 ):
     """Save comprehensive analysis including link prediction results and lift curves for both deciles and centiles."""
@@ -556,7 +558,10 @@ def save_results_analysis(
         f.write(f"Embedding Type: {args.embedding_type}\n")
         f.write(f"Link Removal Probability (1-q): {1-args.q:.2f}\n")
         f.write(f"Link Retention Probability (q): {args.q:.2f}\n")
-        f.write(f"Number of Links to Predict: {args.n_links if args.n_links else 'Same as removed links'}\n\n")
+        f.write(f"Number of Links to Predict: {args.n_links if args.n_links else 'Same as removed links'}\n")
+        if training_time is not None:
+            f.write(f"Training Time: {training_time:.4f} seconds ({training_time/60:.4f} minutes)\n")
+        f.write("\n")
 
         # Graph information
         f.write("Graph Information:\n")
@@ -682,8 +687,9 @@ def parse_args():
             "AirportsUSA",
             "AirportsBrazil",
             "AirportsEurope",
+            "KarateClub",
         ],
-        help="Dataset to use: ToggleSwitch (PoincareMaps), AS (Stanford SNAP Autonomous Systems), Facebook (Stanford SNAP), Cora, or Airports (USA/Brazil/Europe)",
+        help="Dataset to use: ToggleSwitch (PoincareMaps), AS (Stanford SNAP Autonomous Systems), Facebook (Stanford SNAP), Cora, Airports (USA/Brazil/Europe), or KarateClub",
     )
     parser.add_argument(
         "--n_bins",
@@ -792,6 +798,12 @@ def main():
         # Extract labels if available
         labels = data.y.numpy() if data.y is not None else None
         metadata = {"labels": labels, "dataset_name": "AirportsEurope", "num_nodes": data.num_nodes, "num_edges": data.num_edges}
+    elif args.dataset == "KarateClub":
+        print("Loading Karate Club graph...")
+        graph = nx.karate_club_graph()
+        # Extract labels (club membership) if available
+        labels = [graph.nodes[n].get("club", None) for n in sorted(graph.nodes())]
+        metadata = {"labels": labels, "dataset_name": "KarateClub", "num_nodes": len(graph.nodes()), "num_edges": len(graph.edges())}
     else:
         print(f"Loading PoincareMaps dataset: {args.dataset}")
         loader = PoincareMapsLoader("models/PoincareMaps/datasets/")
@@ -817,8 +829,10 @@ def main():
     print(f"Graph created from omega_E: {len(graph_from_omega_E.nodes)} nodes, {len(graph_from_omega_E.edges)} edges")
 
     # Train embeddings (hyperbolic or RDPG)
+    training_time = None
     if args.embedding_type == "rdpg":
         print("Computing RDPG embeddings...")
+        start_time = time.time()
         adjacency_matrix = nx.to_numpy_array(graph_from_omega_E)
 
         (w, v) = scipy.sparse.linalg.eigs(adjacency_matrix, k=10, which="LM")
@@ -830,7 +844,9 @@ def main():
         d = 2  # Default dimension for RDPG
         ase = AdjacencySpectralEmbed(n_components=d, diag_aug=True, algorithm="full")
         embeddings = ase.fit_transform(adjacency_matrix)
+        training_time = time.time() - start_time
         print(f"RDPG embeddings shape: {embeddings.shape}")
+        print(f"RDPG embedding computation time: {training_time:.4f} seconds ({training_time/60:.4f} minutes)")
         native_space = "euclidean"
         embedding_runner = None
         poincare_embeddings = None  # Skip Poincaré visualization for RDPG
@@ -880,7 +896,11 @@ def main():
         # Train the model
         model_path = f"saved_models/{args.dataset}/link_prediction/{args.embedding_type}_model.bin"
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        print(f"Training {args.embedding_type} embeddings...")
+        start_time = time.time()
         embedding_runner.train(adjacency_matrix=adjacency_matrix, model_path=model_path)
+        training_time = time.time() - start_time
+        print(f"Training completed in {training_time:.4f} seconds ({training_time/60:.4f} minutes)")
 
         # Get embeddings
         embeddings = embedding_runner.get_all_embeddings(model_path)
@@ -987,7 +1007,7 @@ def main():
 
     # Save results analysis to file
     results_path = f"{RESULTS_PATH}/{args.embedding_type}_result_analysis.txt"
-    save_results_analysis(metrics, args, results, graph_info, lift_data_deciles, lift_data_centiles, results_path)
+    save_results_analysis(metrics, args, results, graph_info, lift_data_deciles, lift_data_centiles, training_time, results_path)
     print(f"\nResults analysis saved to: {results_path}")
 
     # Analyze predictions: recovered links vs false positives

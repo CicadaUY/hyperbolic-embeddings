@@ -1,5 +1,7 @@
 import argparse
+import os
 import random
+import time
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -224,6 +226,7 @@ def parse_args():
     )
     parser.add_argument("--n_links", type=int, default=None, help="Number of links to predict (default: same as number of edges in graph)")
     parser.add_argument("--q", type=float, default=0.5, help="Probability of keeping a link (default: 0.5)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for link removal simulation (default: 42)")
 
     return parser.parse_args()
 
@@ -232,18 +235,16 @@ def main():
     """Run a simple example of the link prediction pipeline."""
     args = parse_args()
     PATH = f"test/karate_club/plots/link_prediction/"
+    os.makedirs(PATH, exist_ok=True)
 
     print("Link Prediction Pipeline Example")
     print("=" * 40)
     print(f"Embedding type: {args.embedding_type}")
+    print(f"Random seed: {args.seed}")
     print()
 
-    # Create a test tree graph
-    print("Creating test tree graph...")
-    graph = create_test_tree_graph(branching_factor=2, depth=4)
-    print(f"Graph created: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
-
     # Load Karate Club graph
+    print("Loading Karate Club graph...")
     graph = nx.karate_club_graph()
 
     # Train hyperbolic embeddings
@@ -263,8 +264,9 @@ def main():
     # Prepare training data
     adjacency_matrix = nx.to_numpy_array(graph)
 
-    # Train the model
+    Train the model
     model_path = f"saved_models/karate_club/link_prediction/{args.embedding_type}_original_graph_model.bin"
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
     embedding_runner.train(adjacency_matrix=adjacency_matrix, model_path=model_path)
 
     # Get embeddings
@@ -329,7 +331,8 @@ def main():
 
     # Simulate link removal
     print("Simulating link removal...")
-    results = simulate_link_removal(graph, q=args.q)
+    start_time = time.perf_counter()
+    results = simulate_link_removal(graph, q=args.q, seed=args.seed)
     omega_E = results["omega_E"]  # List of remaining links
 
     # Create graph with same nodes as original graph and edges from omega_E
@@ -352,13 +355,18 @@ def main():
     }
     config = configurations[args.embedding_type]
     embedding_runner = HyperbolicEmbeddings(embedding_type=args.embedding_type, config=config)
+    native_space = embedding_runner.model.native_space
 
     # Prepare training data
     adjacency_matrix = nx.to_numpy_array(graph_from_omega_E)
 
     # Train the model
     model_path = f"saved_models/tree_test/link_prediction/{args.embedding_type}_model.bin"
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
     embedding_runner.train(adjacency_matrix=adjacency_matrix, model_path=model_path)
+    end_time = time.perf_counter()
+    execution_time = end_time - start_time
+    print(f"Embedding training completed in {execution_time:.4f} seconds")
 
     # Get embeddings
     embeddings = embedding_runner.get_all_embeddings(model_path)
