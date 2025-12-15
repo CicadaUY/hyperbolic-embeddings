@@ -1,6 +1,7 @@
 import argparse
 import multiprocessing
 import os
+import time
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
@@ -186,6 +187,12 @@ def main():
         ],
         help="Space to plot embeddings in.",
     )
+    parser.add_argument(
+        "--num_runs",
+        type=int,
+        default=3,
+        help="Number of runs for each embedding type to calculate mean and std of timing.",
+    )
 
     args = parser.parse_args()
 
@@ -231,7 +238,7 @@ def main():
         "hypermap",
         "hydra_plus",
         "poincare_maps",
-        # "lorentz",
+        "lorentz",
     ]
 
     # Create figure with subplots (3 rows x 3 columns, using 7 subplots)
@@ -246,36 +253,60 @@ def main():
         axes = axes.flatten()
 
     all_embeddings_data = []
+    timing_results = {}  # Will store list of times for each embedding type
 
     # Train all embeddings and collect data
     for idx, embedding_type in enumerate(embedding_types):
         print(f"\n{'='*60}")
         print(f"Training {embedding_type} embeddings ({idx+1}/{len(embedding_types)})...")
+        print(f"Running {args.num_runs} times for timing statistics...")
         print(f"{'='*60}")
 
         config = configurations[embedding_type]
-        model_path = os.path.join(args.model_dir, f"{embedding_type}_embeddings.bin")
+        timing_results[embedding_type] = []
 
-        embedding_runner = HyperbolicEmbeddings(embedding_type=embedding_type, config=config)
+        # Run multiple times for timing statistics
+        for run in range(args.num_runs):
+            print(f"\n  Run {run+1}/{args.num_runs}...")
+            model_path = os.path.join(args.model_dir, f"{embedding_type}_embeddings_run{run}.bin")
 
-        if embedding_type in ["hydra", "poincare_maps", "lorentz", "hydra_plus"]:
-            embedding_runner.train(adjacency_matrix=A, model_path=model_path)
-        else:
-            embedding_runner.train(edge_list=edge_list, model_path=model_path)
+            embedding_runner = HyperbolicEmbeddings(embedding_type=embedding_type, config=config)
 
-        embeddings = embedding_runner.get_all_embeddings(model_path)
-        native_embedding_space = embedding_runner.model.native_space
+            # Start timing
+            start_time = time.time()
 
-        all_embeddings_data.append(
-            {
-                "type": embedding_type,
-                "embeddings": embeddings,
-                "native_space": native_embedding_space,
-                "runner": embedding_runner,
-            }
-        )
+            if embedding_type in ["hydra", "poincare_maps", "lorentz", "hydra_plus"]:
+                embedding_runner.train(adjacency_matrix=A, model_path=model_path)
+            else:
+                embedding_runner.train(edge_list=edge_list, model_path=model_path)
 
-        print(f"✓ {embedding_type} completed (native space: {native_embedding_space})")
+            embeddings = embedding_runner.get_all_embeddings(model_path)
+
+            # End timing
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            timing_results[embedding_type].append(elapsed_time)
+
+            print(f"    ✓ Run {run+1} completed: {elapsed_time:.2f}s")
+
+            # Store embeddings from the first run for plotting
+            if run == 0:
+                native_embedding_space = embedding_runner.model.native_space
+                all_embeddings_data.append(
+                    {
+                        "type": embedding_type,
+                        "embeddings": embeddings,
+                        "native_space": native_embedding_space,
+                        "runner": embedding_runner,
+                    }
+                )
+
+        # Calculate and print statistics for this embedding type
+        times = np.array(timing_results[embedding_type])
+        mean_time = np.mean(times)
+        std_time = np.std(times)
+        print(f"\n✓ {embedding_type} completed (native space: {native_embedding_space})")
+        print(f"  Mean time: {mean_time:.2f}s ± {std_time:.2f}s")
 
     # Plot all embeddings in subplots
     print(f"\n{'='*60}")
@@ -311,6 +342,48 @@ def main():
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     print(f"\n✓ Comparison plot saved to {plot_path}")
     plt.close()
+
+    # Print timing summary
+    print(f"\n{'='*60}")
+    print(f"TIMING SUMMARY ({args.num_runs} runs per embedding type)")
+    print(f"{'='*60}")
+    print(f"{'Embedding Type':<25} {'Mean ± Std (s)':<20}")
+    print(f"{'-'*60}")
+
+    # Calculate statistics and sort by mean time
+    timing_stats = {}
+    for embedding_type, times in timing_results.items():
+        times_array = np.array(times)
+        timing_stats[embedding_type] = {
+            "mean": np.mean(times_array),
+            "std": np.std(times_array),
+            "min": np.min(times_array),
+            "max": np.max(times_array),
+        }
+
+    sorted_timings = sorted(timing_stats.items(), key=lambda x: x[1]["mean"])
+
+    for embedding_type, stats in sorted_timings:
+        mean_s = stats["mean"]
+        std_s = stats["std"]
+        print(f"{embedding_type:<25} {mean_s:>8.2f} ± {std_s:<6.2f}")
+
+    print(f"{'-'*60}")
+    total_mean = sum(stats["mean"] for stats in timing_stats.values())
+    print(f"{'TOTAL (mean)':<25} {total_mean:>18.2f}")
+    print(f"{'='*60}")
+
+    # Print detailed statistics
+    print(f"\n{'='*80}")
+    print("DETAILED TIMING STATISTICS")
+    print(f"{'='*80}")
+    print(f"{'Embedding Type':<20} {'Mean (s)':<12} {'Std (s)':<12} {'Min (s)':<12} {'Max (s)':<12}")
+    print(f"{'-'*80}")
+
+    for embedding_type, stats in sorted_timings:
+        print(f"{embedding_type:<20} {stats['mean']:>11.2f} {stats['std']:>11.2f} " f"{stats['min']:>11.2f} {stats['max']:>11.2f}")
+
+    print(f"{'='*80}\n")
 
 
 if __name__ == "__main__":

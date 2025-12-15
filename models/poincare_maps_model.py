@@ -18,6 +18,9 @@ from utils.geometric_conversions import poincare_to_hyperboloid
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
+# Disable PyTorch multiprocessing to prevent segfaults on macOS
+torch.multiprocessing.set_sharing_strategy("file_system")
+
 
 class PoincareMapsModel(BaseHyperbolicModel):
     def __init__(self, config: Dict):
@@ -33,7 +36,8 @@ class PoincareMapsModel(BaseHyperbolicModel):
         self.mode = config.get("mode", "features")
         self.distlocal = config.get("distlocal", "minkowski")
         self.k_neighbours = config.get("k_neighbours", 15)
-        self.device = config.get("device", "cuda")
+        # Force CPU on macOS to avoid CUDA-related segfaults
+        self.device = config.get("device", "cpu" if not torch.cuda.is_available() else "cuda")
         self.logger = logging.getLogger(__name__)
 
     @property
@@ -78,7 +82,8 @@ class PoincareMapsModel(BaseHyperbolicModel):
         # RFA = RFA.to(self.device)
 
         if self.batch_size < 0:
-            self.batch_size = min(512, int(len(RFA) / 10))
+            # Force batch_size=1 to avoid PyTorch softmax segfault on Python 3.11.9/macOS
+            self.batch_size = 1  # min(512, int(len(RFA) / 10))
 
         self.lr = self.batch_size / 16 * self.lr
 
@@ -88,6 +93,7 @@ class PoincareMapsModel(BaseHyperbolicModel):
         dataset = TensorDataset(indices, RFA)
 
         # Instantiate Embedding predictor
+        # Explicitly set cuda=0 to ensure CPU mode on macOS
         self.model = PoincareEmbedding(
             size=len(dataset),
             dim=self.dim,
@@ -96,20 +102,32 @@ class PoincareMapsModel(BaseHyperbolicModel):
             Qdist="laplace",
             lossfn="klSym",
             gamma=self.gamma,
+            cuda=0,  # Force CPU mode
         )
 
         optimizer = RiemannianSGD(self.model.parameters(), lr=self.lr)
 
         # Train Embeddings
         self.logger.info("Starting training...")
+        self.logger.info(f"Using device: {self.device}, CUDA available: {torch.cuda.is_available()}")
 
-        loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+        # Disable all multiprocessing features to prevent segfaults on macOS
+        loader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=0,
+            pin_memory=False,  # Can cause issues on macOS
+            persistent_workers=False,  # Ensure no worker persistence
+            prefetch_factor=None,  # Disable prefetching
+        )
 
-        pbar = tqdm(range(self.epochs), ncols=80, file=sys.stdout)
+        pbar = tqdm(range(self.epochs), ncols=80, file=sys.stdout, disable=False)
 
         n_iter = 0
         epoch_loss = []
         earlystop_count = 0
+
         for epoch in pbar:
             grad_norm = []
 
@@ -119,18 +137,25 @@ class PoincareMapsModel(BaseHyperbolicModel):
                 lr = lr * self.lrm
 
             epoch_error = 0
-            for inputs, targets in loader:
-                loss = self.model.lossfn(self.model(inputs), targets)
+            try:
+                for batch_idx, (inputs, targets) in enumerate(loader):
+                    loss = self.model.lossfn(self.model(inputs), targets)
 
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step(lr=lr)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step(lr=lr)
 
-                epoch_error += loss.item()
+                    epoch_error += loss.item()
 
-                grad_norm.append(self.model.lt.weight.grad.data.norm().item())
+                    grad_norm.append(self.model.lt.weight.grad.data.norm().item())
 
-                n_iter += 1
+                    n_iter += 1
+            except Exception as e:
+                self.logger.error(f"Error during training iteration: {e}")
+                self.logger.error(f"Inputs shape: {inputs.shape if 'inputs' in locals() else 'N/A'}")
+                self.logger.error(f"Targets shape: {targets.shape if 'targets' in locals() else 'N/A'}")
+                raise
+                raise
 
             epoch_error /= len(loader)
             epoch_loss.append(epoch_error)

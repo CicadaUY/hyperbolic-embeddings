@@ -1,12 +1,17 @@
 import argparse
+import faulthandler
 import os
 
 import networkx as nx
 import numpy as np
 
 from hyperbolic_embeddings import HyperbolicEmbeddings
-import multiprocessing
-multiprocessing.set_start_method("spawn", force=True)
+
+# Enable faulthandler for better crash diagnostics
+faulthandler.enable()
+
+# Removed multiprocessing.set_start_method to avoid semaphore issues
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train and plot hyperbolic embeddings for the Karate Club graph.")
@@ -81,7 +86,7 @@ def main():
 
     # Print model information
     model_info = embedding_runner.get_model_info()
-    print(f"\nModel Information:")
+    print("\nModel Information:")
     print(f"  Embedding Type: {model_info['embedding_type']}")
     print(f"  Model Class: {model_info['model_class']}")
     print(f"  Native Embedding Space: {native_embedding_space}")
