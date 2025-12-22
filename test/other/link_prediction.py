@@ -558,6 +558,8 @@ def save_results_analysis(
         f.write("-" * 25 + "\n")
         f.write(f"Dataset: {args.dataset}\n")
         f.write(f"Embedding Type: {args.embedding_type}\n")
+        if args.embedding_type == "rdpg":
+            f.write(f"RDPG Dimension: {args.rdpg_dim}\n")
         f.write(f"Link Removal Probability (1-q): {1-args.q:.2f}\n")
         f.write(f"Link Retention Probability (q): {args.q:.2f}\n")
         f.write(f"Number of Links to Predict: {args.n_links if args.n_links else 'Same as removed links'}\n")
@@ -767,6 +769,7 @@ def run_single_link_prediction(
     save_plots: bool = True,
     PATH: str = None,
     RESULTS_PATH: str = None,
+    embedding_name: str = None,
 ) -> dict:
     """
     Run a single link prediction experiment.
@@ -902,7 +905,7 @@ def run_single_link_prediction(
                 poincare_embeddings = embeddings
 
             plot_title = "Omega E Graph Embeddings in Poincaré Disk"
-            save_path = f"{PATH}/{args.embedding_type}_omega_E_graph_embeddings.pdf"
+            save_path = f"{PATH}/{embedding_name}_omega_E_graph_embeddings.pdf"
             plot_embeddings(poincare_embeddings, embedding_runner, omega_E, [], [], plot_title, save_path, max_edges)
 
         # Convert to hyperboloid coordinates if needed
@@ -1018,6 +1021,8 @@ def compute_metrics_statistics(all_metrics: List[dict]) -> dict:
 def main():
     """Run a simple example of the link prediction pipeline."""
     args = parse_args()
+    # Include dimension in path for RDPG embeddings
+    embedding_name = f"{args.embedding_type}_d{args.rdpg_dim}" if args.embedding_type == "rdpg" else args.embedding_type
     PATH = f"test/other/plots/link_prediction/{args.dataset}"
     RESULTS_PATH = f"test/other/results/{args.dataset}"
 
@@ -1028,6 +1033,8 @@ def main():
     print("Link Prediction Pipeline Example")
     print("=" * 40)
     print(f"Embedding type: {args.embedding_type}")
+    if args.embedding_type == "rdpg":
+        print(f"RDPG Dimension: {args.rdpg_dim}")
     print(f"Output directory: {PATH}")
     print(f"Results directory: {RESULTS_PATH}")
     print()
@@ -1160,6 +1167,7 @@ def main():
             save_plots=save_plots,
             PATH=PATH,
             RESULTS_PATH=RESULTS_PATH,
+            embedding_name=embedding_name,
         )
 
         # Store results
@@ -1205,7 +1213,7 @@ def main():
             aggregated_metrics[metric_name] = stats["mean"]
 
         # Save aggregated results
-        results_path = f"{RESULTS_PATH}/{args.embedding_type}_result_analysis.txt"
+        results_path = f"{RESULTS_PATH}/{embedding_name}_result_analysis.txt"
         save_results_analysis(
             aggregated_metrics,
             args,
@@ -1222,11 +1230,11 @@ def main():
 
         # Generate lift curve visualizations (using first run)
         print("\nGenerating visualizations (using first run)...")
-        lift_plot_deciles_path = f"{RESULTS_PATH}/{args.embedding_type}_lift_curve_deciles.pdf"
-        plot_lift_curve(lift_data_deciles, args.dataset, args.embedding_type, lift_plot_deciles_path)
+        lift_plot_deciles_path = f"{RESULTS_PATH}/{embedding_name}_lift_curve_deciles.pdf"
+        plot_lift_curve(lift_data_deciles, args.dataset, embedding_name, lift_plot_deciles_path)
 
-        lift_plot_centiles_path = f"{RESULTS_PATH}/{args.embedding_type}_lift_curve_centiles.pdf"
-        plot_lift_curve(lift_data_centiles, args.dataset, args.embedding_type, lift_plot_centiles_path)
+        lift_plot_centiles_path = f"{RESULTS_PATH}/{embedding_name}_lift_curve_centiles.pdf"
+        plot_lift_curve(lift_data_centiles, args.dataset, embedding_name, lift_plot_centiles_path)
 
         # Visualization for first run
         if first_run_result["embedding_runner"] is not None:
@@ -1250,7 +1258,7 @@ def main():
             poincare_embeddings = first_run_result["poincare_embeddings"]
             if poincare_embeddings is not None:
                 plot_title = "Predicted Links in Poincaré Disk (First Run)"
-                save_path = f"{PATH}/{args.embedding_type}_omega_E_predicted_links.pdf"
+                save_path = f"{PATH}/{embedding_name}_omega_E_predicted_links.pdf"
                 plot_embeddings(
                     poincare_embeddings,
                     first_run_result["embedding_runner"],
@@ -1335,7 +1343,7 @@ def main():
             poincare_embeddings = first_run_result["poincare_embeddings"]
             if poincare_embeddings is not None:
                 plot_title = "Predicted Links in Poincaré Disk"
-                save_path = f"{PATH}/{args.embedding_type}_omega_E_predicted_links.pdf"
+                save_path = f"{PATH}/{embedding_name}_omega_E_predicted_links.pdf"
                 plot_embeddings(
                     poincare_embeddings,
                     first_run_result["embedding_runner"],

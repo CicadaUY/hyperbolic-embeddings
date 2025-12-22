@@ -20,6 +20,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder
 
 from hyperbolic_embeddings import HyperbolicEmbeddings
+from neuroseed_loader import load_neuroseed_dataset
 from poincare_maps_networkx_loader import PoincareMapsLoader
 from utils.geometric_conversions import HyperbolicConversions
 
@@ -494,6 +495,31 @@ def load_polblogs_dataset(
     print(f"Number of classes: {len(np.unique(labels))}")
     print(f"Label distribution: {np.bincount(labels)}")
 
+    # Extract largest connected component (needed for some embedding methods like dmercator)
+    if not nx.is_connected(graph):
+        print("\nGraph has multiple components. Extracting largest connected component...")
+        # Get the largest connected component
+        largest_cc = max(nx.connected_components(graph), key=len)
+
+        # Create subgraph with only the largest component
+        graph = graph.subgraph(largest_cc).copy()
+
+        # Create mapping from old to new node indices
+        old_to_new = {old_idx: new_idx for new_idx, old_idx in enumerate(sorted(largest_cc))}
+
+        # Relabel nodes to be sequential starting from 0
+        graph = nx.relabel_nodes(graph, old_to_new)
+
+        # Filter labels and node indices to match the largest component
+        labels = labels[sorted(largest_cc)]
+        node_indices = np.arange(len(largest_cc))
+
+        print(
+            f"Largest component: {graph.number_of_nodes()} nodes ({100*len(largest_cc)/data.num_nodes:.1f}% of original), {graph.number_of_edges()} edges"
+        )
+        print(f"Number of classes: {len(np.unique(labels))}")
+        print(f"Label distribution: {np.bincount(labels)}")
+
     # Create subgraph if requested
     if subgraph_size is not None and subgraph_size > 0:
         graph, labels, node_indices = create_subgraph(
@@ -589,6 +615,8 @@ def load_dataset(
     random_seed: int = None,
     min_nodes_per_class: int = 5,
     max_classes: int = None,
+    neuroseed_task: str = "edit_distance",
+    neuroseed_split: str = "train",
 ) -> Tuple[nx.Graph, np.ndarray, np.ndarray]:
     """
     Load dataset based on type and return graph, labels, and node indices.
@@ -598,11 +626,15 @@ def load_dataset(
     dataset_name : str
         Name of the dataset
     dataset_type : str
-        Type of dataset ("AS", "ogbn-arxiv", or PoincareMaps dataset name)
+        Type of dataset ("AS", "ogbn-arxiv", "neuroseed", or PoincareMaps dataset name)
     k_neighbors : int
-        Number of neighbors for PoincareMaps KNN graph construction
+        Number of neighbors for PoincareMaps/NeuroSEED KNN graph construction
     datasets_path : str
         Path to PoincareMaps datasets directory
+    neuroseed_task : str
+        Task name for NeuroSEED dataset (e.g., "edit_distance", "closest_string")
+    neuroseed_split : str
+        Split for NeuroSEED dataset ("train", "val", "test")
 
     Returns:
     --------
@@ -637,6 +669,11 @@ def load_dataset(
             min_nodes_per_class=min_nodes_per_class,
             max_classes=max_classes,
         )
+    elif dataset_type == "neuroseed":
+        # For NeuroSEED, we DON'T use load_neuroseed_dataset here
+        # because we need to handle train/test splits properly in main()
+        # This is a placeholder - actual loading happens in main()
+        return None, None, None
     else:
         # PoincareMaps dataset
         if datasets_path is None:
@@ -781,6 +818,7 @@ def evaluate_knn(
     y_train: np.ndarray,
     y_test: np.ndarray,
     k_values: list = [3, 5, 7, 10],
+    n_iterations: int = 1,
 ) -> dict:
     """
     Evaluate KNN classification with different k values using hyperbolic distance.
@@ -797,36 +835,64 @@ def evaluate_knn(
         Test labels
     k_values : list
         List of k values to test
+    n_iterations : int
+        Number of iterations to run for computing mean and std (default: 1)
 
     Returns:
     --------
     results : dict
-        Dictionary containing results for each k value
+        Dictionary containing results for each k value with mean and std
     """
     results = {}
 
     for k in k_values:
         print(f"\nEvaluating KNN with k={k}...")
 
-        # Create KNN classifier with hyperbolic distance
-        knn = KNeighborsClassifier(n_neighbors=k, metric=hyperbolic_distance, algorithm="brute")
+        # Store metrics for all iterations
+        accuracies = []
+        precisions = []
+        recalls = []
+        f1_scores = []
 
-        # Fit and predict
-        knn.fit(X_train, y_train)
-        y_pred = knn.predict(X_test)
+        for iteration in range(n_iterations):
+            if n_iterations > 1:
+                print(f"  Iteration {iteration + 1}/{n_iterations}...", end="\r")
 
-        # Compute metrics
-        accuracy = accuracy_score(y_test, y_pred)
-        precision = precision_score(y_test, y_pred, average="weighted", zero_division=0)
-        recall = recall_score(y_test, y_pred, average="weighted", zero_division=0)
-        f1 = f1_score(y_test, y_pred, average="weighted", zero_division=0)
+            # Create KNN classifier with hyperbolic distance
+            knn = KNeighborsClassifier(n_neighbors=k, metric=hyperbolic_distance, algorithm="brute")
 
+            # Fit and predict
+            knn.fit(X_train, y_train)
+            y_pred = knn.predict(X_test)
+
+            # Compute metrics
+            accuracy = accuracy_score(y_test, y_pred)
+            precision = precision_score(y_test, y_pred, average="weighted", zero_division=0)
+            recall = recall_score(y_test, y_pred, average="weighted", zero_division=0)
+            f1 = f1_score(y_test, y_pred, average="weighted", zero_division=0)
+
+            accuracies.append(accuracy)
+            precisions.append(precision)
+            recalls.append(recall)
+            f1_scores.append(f1)
+
+        if n_iterations > 1:
+            print(f"  Completed {n_iterations} iterations")
+
+        # Calculate mean and std
         results[k] = {
-            "accuracy": accuracy,
-            "precision": precision,
-            "recall": recall,
-            "f1": f1,
-            "predictions": y_pred,
+            "accuracy_mean": np.mean(accuracies),
+            "accuracy_std": np.std(accuracies),
+            "precision_mean": np.mean(precisions),
+            "precision_std": np.std(precisions),
+            "recall_mean": np.mean(recalls),
+            "recall_std": np.std(recalls),
+            "f1_mean": np.mean(f1_scores),
+            "f1_std": np.std(f1_scores),
+            "accuracies": accuracies,
+            "precisions": precisions,
+            "recalls": recalls,
+            "f1_scores": f1_scores,
         }
 
     return results
@@ -838,7 +904,18 @@ def main():
         "--dataset",
         type=str,
         default="ToggleSwitch",
-        choices=["AS", "ToggleSwitch", "Olsson", "MyeloidProgenitors", "krumsiek11_blobs", "Paul", "ogbn-arxiv", "polblogs", "Cora"],
+        choices=[
+            "AS",
+            "ToggleSwitch",
+            "Olsson",
+            "MyeloidProgenitors",
+            "krumsiek11_blobs",
+            "Paul",
+            "ogbn-arxiv",
+            "polblogs",
+            "Cora",
+            "neuroseed",
+        ],
         help="Dataset to use",
     )
     parser.add_argument(
@@ -909,6 +986,24 @@ def main():
         default=4,
         help="Maximum number of classes to include in subgraph (default: 4). Set to None to include all classes.",
     )
+    parser.add_argument(
+        "--neuroseed_task",
+        type=str,
+        default="edit_distance",
+        choices=["edit_distance", "closest_string", "hierarchical_clustering", "multiple_alignment"],
+        help="Task name for NeuroSEED dataset (only used when dataset=neuroseed).",
+    )
+    parser.add_argument(
+        "--use_predefined_splits",
+        action="store_true",
+        help="Use pre-defined train/test splits for NeuroSEED (requires real data). If not set, uses synthetic data with random split.",
+    )
+    parser.add_argument(
+        "--n_iterations",
+        type=int,
+        default=10,
+        help="Number of iterations to run for computing mean and std of metrics (default: 10).",
+    )
 
     args = parser.parse_args()
 
@@ -916,61 +1011,144 @@ def main():
     if args.model_dir is None:
         args.model_dir = f"saved_models/{args.dataset}"
 
-    # Load dataset
-    try:
-        graph, labels, node_indices = load_dataset(
-            dataset_name=args.dataset,
-            dataset_type=args.dataset,
-            k_neighbors=args.k_neighbors,
-            datasets_path=args.datasets_path,
-            subgraph_size=args.subgraph_size,
-            random_seed=args.random_state,
-            min_nodes_per_class=args.min_nodes_per_class,
-            max_classes=args.max_classes if args.max_classes > 0 else None,
+    # Special handling for NeuroSEED with pre-defined splits
+    if args.dataset == "neuroseed" and args.use_predefined_splits:
+        print("\n" + "=" * 70)
+        print("Using NeuroSEED with Pre-defined Train/Test Splits")
+        print("=" * 70)
+
+        try:
+            # Load pre-defined splits
+            result = load_neuroseed_dataset(
+                task=args.neuroseed_task,
+                k_neighbors=args.k_neighbors,
+                seed=args.random_state,
+                use_predefined_splits=True,
+            )
+
+            # Unpack the results
+            train_graph, test_graph, train_labels, test_labels, train_indices, test_indices = result
+
+            # Train embeddings on training graph
+            print("\nTraining embeddings on TRAINING set...")
+            train_embeddings, embedding_space = train_hyperbolic_embeddings(
+                graph=train_graph,
+                embedding_type=args.embedding_type,
+                model_dir=os.path.join(args.model_dir, "train"),
+                dim=args.dim,
+            )
+
+            # Train embeddings on test graph (same model, different graph)
+            print("\nTraining embeddings on TEST set...")
+            test_embeddings, _ = train_hyperbolic_embeddings(
+                graph=test_graph,
+                embedding_type=args.embedding_type,
+                model_dir=os.path.join(args.model_dir, "test"),
+                dim=args.dim,
+            )
+
+            # Use the full train/test sets (no re-splitting!)
+            X_train, y_train = train_embeddings, train_labels
+            X_test, y_test = test_embeddings, test_labels
+
+            print("\n✓ Using pre-defined splits:")
+            print(f"  Training set: {len(X_train)} samples")
+            print(f"  Test set: {len(X_test)} samples")
+
+        except Exception as e:
+            print(f"Error loading NeuroSEED with pre-defined splits: {e}")
+            print("Make sure real NeuroSEED data is available in data/neuroseed/")
+            print("Falling back to synthetic data with random split...")
+            args.use_predefined_splits = False
+
+    # Standard loading for all other cases
+    if not (args.dataset == "neuroseed" and args.use_predefined_splits):
+        # Load dataset
+        try:
+            if args.dataset == "neuroseed":
+                # Use synthetic data with single graph
+                graph, labels, node_indices = load_neuroseed_dataset(
+                    task=args.neuroseed_task,
+                    num_samples=args.subgraph_size or 1000,
+                    k_neighbors=args.k_neighbors,
+                    seed=args.random_state,
+                    use_predefined_splits=False,
+                )
+            else:
+                graph, labels, node_indices = load_dataset(
+                    dataset_name=args.dataset,
+                    dataset_type=args.dataset,
+                    k_neighbors=args.k_neighbors,
+                    datasets_path=args.datasets_path,
+                    subgraph_size=args.subgraph_size,
+                    random_seed=args.random_state,
+                    min_nodes_per_class=args.min_nodes_per_class,
+                    max_classes=args.max_classes if args.max_classes > 0 else None,
+                    neuroseed_task=args.neuroseed_task,
+                    neuroseed_split="train",  # Unused for neuroseed now
+                )
+        except ValueError as e:
+            print(f"Error: {e}")
+            return
+
+        # Train embeddings
+        embeddings, embedding_space = train_hyperbolic_embeddings(
+            graph=graph,
+            embedding_type=args.embedding_type,
+            model_dir=args.model_dir,
+            dim=args.dim,
         )
-    except ValueError as e:
-        print(f"Error: {e}")
-        return
 
-    # Train embeddings
-    embeddings, embedding_space = train_hyperbolic_embeddings(
-        graph=graph,
-        embedding_type=args.embedding_type,
-        model_dir=args.model_dir,
-        dim=args.dim,
-    )
+        # Split data into train and test sets
+        print(f"\nSplitting data into train/test sets (test_size={args.test_size})...")
+        X_train, X_test, y_train, y_test, train_indices, test_indices = train_test_split(
+            embeddings,
+            labels,
+            node_indices,
+            test_size=args.test_size,
+            random_state=args.random_state,
+            stratify=labels,
+        )
 
-    # Split data into train and test sets
-    print(f"\nSplitting data into train/test sets (test_size={args.test_size})...")
-    X_train, X_test, y_train, y_test, train_indices, test_indices = train_test_split(
-        embeddings,
-        labels,
-        node_indices,
-        test_size=args.test_size,
-        random_state=args.random_state,
-        stratify=labels,
-    )
-
-    print(f"Training set: {len(X_train)} samples")
-    print(f"Test set: {len(X_test)} samples")
+        print(f"Training set: {len(X_train)} samples")
+        print(f"Test set: {len(X_test)} samples")
 
     # Evaluate KNN with different k values
-    results = evaluate_knn(X_train, X_test, y_train, y_test, k_values=args.k_values)
+    results = evaluate_knn(X_train, X_test, y_train, y_test, k_values=args.k_values, n_iterations=args.n_iterations)
 
     # Print summary
-    print("\n" + "=" * 60)
-    print("SUMMARY OF RESULTS")
-    print("=" * 60)
-    print(f"{'k':<5} {'Accuracy':<12} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
-    print("-" * 60)
-    for k in sorted(results.keys()):
-        r = results[k]
-        print(f"{k:<5} {r['accuracy']:<12.4f} {r['precision']:<12.4f} {r['recall']:<12.4f} {r['f1']:<12.4f}")
-    print("=" * 60)
+    print("\n" + "=" * 90)
+    print(f"SUMMARY OF RESULTS (Mean ± Std over {args.n_iterations} iterations)")
+    print("=" * 90)
+    if args.n_iterations > 1:
+        print(f"{'k':<5} {'Accuracy':<20} {'Precision':<20} {'Recall':<20} {'F1-Score':<20}")
+        print("-" * 90)
+        for k in sorted(results.keys()):
+            r = results[k]
+            print(
+                f"{k:<5} "
+                f"{r['accuracy_mean']:.4f} ± {r['accuracy_std']:.4f}  "
+                f"{r['precision_mean']:.4f} ± {r['precision_std']:.4f}  "
+                f"{r['recall_mean']:.4f} ± {r['recall_std']:.4f}  "
+                f"{r['f1_mean']:.4f} ± {r['f1_std']:.4f}"
+            )
+    else:
+        print(f"{'k':<5} {'Accuracy':<12} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
+        print("-" * 90)
+        for k in sorted(results.keys()):
+            r = results[k]
+            print(
+                f"{k:<5} "
+                f"{r['accuracy_mean']:<12.4f} "
+                f"{r['precision_mean']:<12.4f} "
+                f"{r['recall_mean']:<12.4f} "
+                f"{r['f1_mean']:<12.4f}"
+            )
+    print("=" * 90)
 
     # Find best k
-    best_k = max(results.keys(), key=lambda k: results[k]["accuracy"])
-    print(f"\nBest k value: {best_k} (Accuracy: {results[best_k]['accuracy']:.4f})")
+    best_k = max(results.keys(), key=lambda k: results[k]["accuracy_mean"])
+    print(f"\nBest k value: {best_k} (Accuracy: {results[best_k]['accuracy_mean']:.4f} ± {results[best_k]['accuracy_std']:.4f})")
 
 
 if __name__ == "__main__":
