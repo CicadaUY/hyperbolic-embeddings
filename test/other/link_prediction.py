@@ -749,6 +749,12 @@ def parse_args():
         default=1,
         help="Number of runs to perform (default: 1). Each run uses a different random seed for link removal.",
     )
+    parser.add_argument(
+        "--rdpg_dim",
+        type=int,
+        default=2,
+        help="Dimension for RDPG embeddings (default: 2, only used when --embedding_type rdpg)",
+    )
 
     return parser.parse_args()
 
@@ -813,7 +819,10 @@ def run_single_link_prediction(
         if args.n_runs == 1:
             print(f"Eigenvalues: {w}")
 
-        d = 2  # Default dimension for RDPG
+        d = args.rdpg_dim
+        if d <= 0:
+            raise ValueError(f"RDPG dimension must be positive, got {d}")
+        print(f"Using RDPG dimension: {d}")
         ase = AdjacencySpectralEmbed(n_components=d, diag_aug=True, algorithm="full")
         embeddings = ase.fit_transform(adjacency_matrix)
         training_time = time.time() - start_time
@@ -1266,10 +1275,13 @@ def main():
 
         # Generate lift curve visualizations
         print("\nGenerating visualizations...")
-        lift_plot_deciles_path = f"{RESULTS_PATH}/{args.embedding_type}_lift_curve_deciles.pdf"
+        # Construct embedding type with dimension suffix for RDPG
+        embedding_type_suffix = f"{args.embedding_type}_d{args.rdpg_dim}" if args.embedding_type == "rdpg" else args.embedding_type
+
+        lift_plot_deciles_path = f"{RESULTS_PATH}/{embedding_type_suffix}_lift_curve_deciles.pdf"
         plot_lift_curve(lift_data_deciles, args.dataset, args.embedding_type, lift_plot_deciles_path)
 
-        lift_plot_centiles_path = f"{RESULTS_PATH}/{args.embedding_type}_lift_curve_centiles.pdf"
+        lift_plot_centiles_path = f"{RESULTS_PATH}/{embedding_type_suffix}_lift_curve_centiles.pdf"
         plot_lift_curve(lift_data_centiles, args.dataset, args.embedding_type, lift_plot_centiles_path)
 
         print(f"Decile lift curve plot saved to: {lift_plot_deciles_path}")
@@ -1301,7 +1313,7 @@ def main():
             print(f"  {metric}: {value:.4f}")
 
         # Save results analysis to file
-        results_path = f"{RESULTS_PATH}/{args.embedding_type}_result_analysis.txt"
+        results_path = f"{RESULTS_PATH}/{embedding_type_suffix}_result_analysis.txt"
         save_results_analysis(metrics, args, results, graph_info, lift_data_deciles, lift_data_centiles, training_time, results_path)
         print(f"\nResults analysis saved to: {results_path}")
 
